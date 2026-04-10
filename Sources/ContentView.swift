@@ -14226,8 +14226,28 @@ private struct WorkspaceGroupHeader: View {
             Button("Rename Group…") {
                 promptRenameGroup()
             }
-            Button("Change Color…") {
-                promptGroupColor()
+            Menu("Group Color") {
+                if group.color != nil {
+                    Button("Clear Color") {
+                        tabManager.setGroupColor(id: group.id, color: nil)
+                    }
+                }
+                Button("Custom Color…") {
+                    promptGroupColor()
+                }
+                Divider()
+                ForEach(WorkspaceTabColorSettings.palette(), id: \.id) { entry in
+                    Button {
+                        tabManager.setGroupColor(id: group.id, color: entry.hex)
+                    } label: {
+                        HStack {
+                            if let ns = NSColor(hex: entry.hex) {
+                                Circle().fill(Color(ns)).frame(width: 10, height: 10)
+                            }
+                            Text(entry.name)
+                        }
+                    }
+                }
             }
             Divider()
             Button("Dissolve Group") {
