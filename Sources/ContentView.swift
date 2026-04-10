@@ -13366,6 +13366,38 @@ private struct TabItemView: View, Equatable {
             }
         }
 
+        if !tabManager.groups.isEmpty || true {
+            Menu("Move to Group") {
+                let currentGroup = tabManager.groupForWorkspace(tab.id)
+                if currentGroup != nil {
+                    Button("No Group") {
+                        if let group = currentGroup {
+                            tabManager.removeWorkspaceFromGroup(groupId: group.id, workspaceId: tab.id)
+                        }
+                    }
+                    Divider()
+                }
+                ForEach(tabManager.groups) { group in
+                    let isCurrent = currentGroup?.id == group.id
+                    Button {
+                        tabManager.addWorkspaceToGroup(groupId: group.id, workspaceId: tab.id)
+                    } label: {
+                        HStack {
+                            if let hex = group.color, let ns = NSColor(hex: hex) {
+                                Circle().fill(Color(ns)).frame(width: 10, height: 10)
+                            }
+                            Text(group.name)
+                        }
+                    }
+                    .disabled(isCurrent)
+                }
+                Divider()
+                Button("New Group…") {
+                    promptNewGroupForWorkspace(tab.id)
+                }
+            }
+        }
+
         if let copyableSidebarSSHError {
             Button(String(localized: "contextMenu.copySshError", defaultValue: "Copy SSH Error")) {
                 copyTextToPasteboard(copyableSidebarSSHError)
@@ -14066,6 +14098,40 @@ private struct TabItemView: View, Equatable {
         applyTabColor(normalized, targetIds: targetIds)
     }
 
+    private func promptNewGroupForWorkspace(_ workspaceId: UUID) {
+        let alert = NSAlert()
+        alert.messageText = "New Workspace Group"
+        alert.informativeText = "Enter a name for the group. Optionally add a hex color (e.g., #50fa7b)."
+
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 240, height: 52))
+        let nameInput = NSTextField(string: "")
+        nameInput.placeholderString = "Group name"
+        nameInput.frame = NSRect(x: 0, y: 28, width: 240, height: 22)
+        let colorInput = NSTextField(string: "#50fa7b")
+        colorInput.placeholderString = "#RRGGBB (optional)"
+        colorInput.frame = NSRect(x: 0, y: 0, width: 240, height: 22)
+        container.addSubview(nameInput)
+        container.addSubview(colorInput)
+        alert.accessoryView = container
+        alert.addButton(withTitle: "Create")
+        alert.addButton(withTitle: "Cancel")
+
+        let alertWindow = alert.window
+        alertWindow.initialFirstResponder = nameInput
+        DispatchQueue.main.async {
+            alertWindow.makeFirstResponder(nameInput)
+        }
+
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return }
+        let name = nameInput.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        let colorRaw = colorInput.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let color: String? = colorRaw.isEmpty ? nil : colorRaw
+        let group = tabManager.createGroup(name: name, color: color)
+        tabManager.addWorkspaceToGroup(groupId: group.id, workspaceId: workspaceId)
+    }
+
     private func showInvalidColorAlert(_ value: String) {
         let alert = NSAlert()
         alert.alertStyle = .warning
@@ -14141,6 +14207,70 @@ private struct WorkspaceGroupHeader: View {
         .onTapGesture {
             tabManager.setGroupCollapsed(id: group.id, collapsed: !group.isCollapsed)
         }
+        .onDrop(of: SidebarTabDragPayload.dropContentTypes, isTargeted: nil) { providers in
+            guard let provider = providers.first else { return false }
+            provider.loadDataRepresentation(forTypeIdentifier: SidebarTabDragPayload.typeIdentifier) { data, _ in
+                guard let data, let payload = String(data: data, encoding: .utf8),
+                      payload.hasPrefix("cmux.sidebar-tab."),
+                      let uuid = UUID(uuidString: String(payload.dropFirst("cmux.sidebar-tab.".count))) else { return }
+                DispatchQueue.main.async {
+                    tabManager.addWorkspaceToGroup(groupId: group.id, workspaceId: uuid)
+                }
+            }
+            return true
+        }
+        .contextMenu {
+            Button(group.isCollapsed ? "Expand" : "Collapse") {
+                tabManager.setGroupCollapsed(id: group.id, collapsed: !group.isCollapsed)
+            }
+            Button("Rename Group…") {
+                promptRenameGroup()
+            }
+            Button("Change Color…") {
+                promptGroupColor()
+            }
+            Divider()
+            Button("Dissolve Group") {
+                tabManager.deleteGroup(id: group.id)
+            }
+        }
+    }
+
+    private func promptRenameGroup() {
+        let alert = NSAlert()
+        alert.messageText = "Rename Group"
+        let input = NSTextField(string: group.name)
+        input.frame = NSRect(x: 0, y: 0, width: 240, height: 22)
+        alert.accessoryView = input
+        alert.addButton(withTitle: "Rename")
+        alert.addButton(withTitle: "Cancel")
+        let alertWindow = alert.window
+        alertWindow.initialFirstResponder = input
+        DispatchQueue.main.async { alertWindow.makeFirstResponder(input); input.selectText(nil) }
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return }
+        let name = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        tabManager.renameGroup(id: group.id, name: name)
+    }
+
+    private func promptGroupColor() {
+        let alert = NSAlert()
+        alert.messageText = "Group Color"
+        alert.informativeText = "Enter a hex color (#RRGGBB) or leave empty to clear."
+        let input = NSTextField(string: group.color ?? "")
+        input.placeholderString = "#50fa7b"
+        input.frame = NSRect(x: 0, y: 0, width: 240, height: 22)
+        alert.accessoryView = input
+        alert.addButton(withTitle: "Apply")
+        alert.addButton(withTitle: "Cancel")
+        let alertWindow = alert.window
+        alertWindow.initialFirstResponder = input
+        DispatchQueue.main.async { alertWindow.makeFirstResponder(input); input.selectText(nil) }
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return }
+        let raw = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        tabManager.setGroupColor(id: group.id, color: raw.isEmpty ? nil : raw)
     }
 }
 
