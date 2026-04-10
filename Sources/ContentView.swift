@@ -10031,6 +10031,11 @@ struct VerticalTabsSidebar: View {
                                                         settings: tabItemSettings, livePresentation: livePresentation, frozenPresentation: $frozenTabItemPresentation
                                                     )
                                                     .equatable()
+                                                    .overlay(
+                                                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                                            .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                                                            .padding(.horizontal, 2)
+                                                    )
                                                 }
                                             }
                                             .padding(.horizontal, 4)
