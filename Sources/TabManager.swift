@@ -5301,7 +5301,9 @@ class TabManager: ObservableObject {
         for group in groups {
             let members = group.workspaceIds.compactMap { tabById[$0] }
             if !members.isEmpty {
-                sections.append(SidebarLayoutSection(group: group, workspaces: members))
+                let pinned = members.filter(\.isPinned)
+                let unpinned = members.filter { !$0.isPinned }
+                sections.append(SidebarLayoutSection(group: group, workspaces: pinned + unpinned))
             }
         }
 
