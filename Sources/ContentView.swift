@@ -14112,17 +14112,39 @@ private struct TabItemView: View, Equatable {
     private func promptNewGroupForWorkspace(_ workspaceId: UUID) {
         let alert = NSAlert()
         alert.messageText = "New Workspace Group"
-        alert.informativeText = "Enter a name for the group. Optionally add a hex color (e.g., #50fa7b)."
+        alert.informativeText = "Enter a name and pick a color for the group."
 
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 240, height: 52))
+        let palette = WorkspaceTabColorSettings.palette()
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 280, height: 56))
+
         let nameInput = NSTextField(string: "")
         nameInput.placeholderString = "Group name"
-        nameInput.frame = NSRect(x: 0, y: 28, width: 240, height: 22)
-        let colorInput = NSTextField(string: "#50fa7b")
-        colorInput.placeholderString = "#RRGGBB (optional)"
-        colorInput.frame = NSRect(x: 0, y: 0, width: 240, height: 22)
+        nameInput.frame = NSRect(x: 0, y: 30, width: 280, height: 24)
+
+        let colorPopup = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 280, height: 26), pullsDown: false)
+        let noneItem = NSMenuItem(title: "No Color", action: nil, keyEquivalent: "")
+        noneItem.tag = -1
+        colorPopup.menu?.addItem(noneItem)
+        colorPopup.menu?.addItem(NSMenuItem.separator())
+        for (i, entry) in palette.enumerated() {
+            let item = NSMenuItem(title: entry.name, action: nil, keyEquivalent: "")
+            item.tag = i
+            if let ns = NSColor(hex: entry.hex) {
+                let size = NSSize(width: 12, height: 12)
+                let img = NSImage(size: size, flipped: false) { rect in
+                    ns.setFill()
+                    NSBezierPath(ovalIn: rect.insetBy(dx: 1, dy: 1)).fill()
+                    return true
+                }
+                img.isTemplate = false
+                item.image = img
+            }
+            colorPopup.menu?.addItem(item)
+        }
+        colorPopup.selectItem(at: 0)
+
         container.addSubview(nameInput)
-        container.addSubview(colorInput)
+        container.addSubview(colorPopup)
         alert.accessoryView = container
         alert.addButton(withTitle: "Create")
         alert.addButton(withTitle: "Cancel")
@@ -14137,8 +14159,8 @@ private struct TabItemView: View, Equatable {
         guard response == .alertFirstButtonReturn else { return }
         let name = nameInput.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }
-        let colorRaw = colorInput.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        let color: String? = colorRaw.isEmpty ? nil : colorRaw
+        let selectedTag = colorPopup.selectedItem?.tag ?? -1
+        let color: String? = (selectedTag >= 0 && selectedTag < palette.count) ? palette[selectedTag].hex : nil
         let group = tabManager.createGroup(name: name, color: color)
         tabManager.addWorkspaceToGroup(groupId: group.id, workspaceId: workspaceId)
     }
