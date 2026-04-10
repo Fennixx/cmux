@@ -13382,11 +13382,12 @@ private struct TabItemView: View, Equatable {
                     Button {
                         tabManager.addWorkspaceToGroup(groupId: group.id, workspaceId: tab.id)
                     } label: {
-                        HStack {
-                            if let hex = group.color, let ns = NSColor(hex: hex) {
-                                Circle().fill(Color(ns)).frame(width: 10, height: 10)
-                            }
+                        Label {
                             Text(group.name)
+                        } icon: {
+                            if let hex = group.color, let ns = NSColor(hex: hex) {
+                                Image(nsImage: coloredCircleImage(color: ns))
+                            }
                         }
                     }
                     .disabled(isCurrent)
@@ -14240,11 +14241,12 @@ private struct WorkspaceGroupHeader: View {
                     Button {
                         tabManager.setGroupColor(id: group.id, color: entry.hex)
                     } label: {
-                        HStack {
-                            if let ns = NSColor(hex: entry.hex) {
-                                Circle().fill(Color(ns)).frame(width: 10, height: 10)
-                            }
+                        Label {
                             Text(entry.name)
+                        } icon: {
+                            if let ns = NSColor(hex: entry.hex) {
+                                Image(nsImage: coloredCircleImage(color: ns))
+                            }
                         }
                     }
                 }
