@@ -344,10 +344,17 @@ struct SessionWorkspaceSnapshot: Codable, Sendable {
     var gitBranch: SessionGitBranchSnapshot?
 }
 
+struct SessionWorkspaceGroupSnapshot: Codable, Sendable {
+    var name: String
+    var color: String?
+    var isCollapsed: Bool
+    var workspaceIndices: [Int]
+}
+
 struct SessionTabManagerSnapshot: Codable, Sendable {
     var selectedWorkspaceIndex: Int?
     var workspaces: [SessionWorkspaceSnapshot]
-    var groups: [WorkspaceGroup]?
+    var groups: [SessionWorkspaceGroupSnapshot]?
 }
 
 struct SessionWindowSnapshot: Codable, Sendable {

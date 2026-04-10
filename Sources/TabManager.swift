@@ -8508,10 +8508,23 @@ extension TabManager {
         let selectedWorkspaceIndex = selectedTabId.flatMap { selectedTabId in
             restorableTabs.firstIndex(where: { $0.id == selectedTabId })
         }
+        let restorableTabIds = restorableTabs.map(\.id)
+        let tabIdToIndex = Dictionary(restorableTabIds.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+        let groupSnapshots: [SessionWorkspaceGroupSnapshot]? = groups.isEmpty ? nil : groups.compactMap { group in
+            let indices = group.workspaceIds.compactMap { tabIdToIndex[$0] }
+            guard !indices.isEmpty else { return nil }
+            return SessionWorkspaceGroupSnapshot(
+                name: group.name,
+                color: group.color,
+                isCollapsed: group.isCollapsed,
+                workspaceIndices: indices
+            )
+        }
+
         return SessionTabManagerSnapshot(
             selectedWorkspaceIndex: selectedWorkspaceIndex,
             workspaces: workspaceSnapshots,
-            groups: groups.isEmpty ? nil : groups
+            groups: groupSnapshots
         )
     }
 
@@ -8595,13 +8608,21 @@ extension TabManager {
         tabs = newTabs
         selectedTabId = newSelectedId
 
-        // Restore groups, pruning workspace IDs that weren't restored.
+        // Restore groups, mapping saved workspace indices to new workspace UUIDs.
         let existingIds = Set(newTabs.map(\.id))
         if let savedGroups = snapshot.groups {
-            groups = savedGroups.map { group in
-                var pruned = group
-                pruned.workspaceIds = group.workspaceIds.filter { existingIds.contains($0) }
-                return pruned
+            groups = savedGroups.compactMap { snapshot in
+                let restoredIds = snapshot.workspaceIndices.compactMap { index -> UUID? in
+                    guard newTabs.indices.contains(index) else { return nil }
+                    return newTabs[index].id
+                }
+                guard !restoredIds.isEmpty else { return nil }
+                return WorkspaceGroup(
+                    name: snapshot.name,
+                    color: snapshot.color,
+                    isCollapsed: snapshot.isCollapsed,
+                    workspaceIds: restoredIds
+                )
             }
             bumpGroupRevision()
         }
