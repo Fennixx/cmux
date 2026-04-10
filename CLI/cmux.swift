@@ -2061,6 +2061,9 @@ struct CMUXCLI {
         case "workspace-action":
             try runWorkspaceAction(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput, idFormat: idFormat, windowOverride: windowId)
 
+        case "group":
+            try runGroup(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput, idFormat: idFormat, windowOverride: windowId)
+
         case "tab-action":
             try runTabAction(commandArgs: commandArgs, client: client, jsonOutput: jsonOutput, idFormat: idFormat, windowOverride: windowId)
 
@@ -3918,6 +3921,106 @@ struct CMUXCLI {
             summaryParts.append("color=\(color)")
         }
         printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: summaryParts.joined(separator: " "))
+    }
+
+    private func runGroup(
+        commandArgs: [String],
+        client: SocketClient,
+        jsonOutput: Bool,
+        idFormat: CLIIDFormat,
+        windowOverride: String?
+    ) throws {
+        guard let subcommand = commandArgs.first else {
+            throw CLIError(message: "group requires a subcommand: create, delete, list, action")
+        }
+        let subArgs = Array(commandArgs.dropFirst())
+
+        switch subcommand {
+        case "create":
+            let (colorOpt, rem0) = parseOption(subArgs, name: "--color")
+            let (nameOpt, rem1) = parseOption(rem0, name: "--name")
+            let name = nameOpt ?? rem1.joined(separator: " ")
+            guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw CLIError(message: "group create requires a name")
+            }
+            var params: [String: Any] = ["name": name.trimmingCharacters(in: .whitespacesAndNewlines)]
+            if let color = colorOpt { params["color"] = color }
+            let payload = try client.sendV2(method: "group.create", params: params)
+            var parts = ["OK"]
+            if let name = payload["name"] as? String { parts.append("name=\(name)") }
+            if let gid = payload["group_id"] as? String { parts.append("group_id=\(gid)") }
+            if let color = payload["color"] as? String { parts.append("color=\(color)") }
+            printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: parts.joined(separator: " "))
+
+        case "delete":
+            let (groupOpt, rem0) = parseOption(subArgs, name: "--group")
+            let groupName = groupOpt ?? rem0.joined(separator: " ")
+            guard !groupName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                throw CLIError(message: "group delete requires a group name or id")
+            }
+            let payload = try client.sendV2(method: "group.delete", params: ["group": groupName])
+            printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: "OK deleted=true")
+
+        case "list":
+            let payload = try client.sendV2(method: "group.list", params: [:])
+            if jsonOutput {
+                printV2Payload(payload, jsonOutput: true, idFormat: idFormat, fallbackText: "")
+            } else if let groups = payload["groups"] as? [[String: Any]] {
+                if groups.isEmpty {
+                    print("  (no groups)")
+                }
+                for group in groups {
+                    let name = group["name"] as? String ?? "?"
+                    let count = group["workspace_count"] as? Int ?? 0
+                    let collapsed = (group["collapsed"] as? Bool ?? false) ? " [collapsed]" : ""
+                    let color = (group["color"] as? String).map { " color=\($0)" } ?? ""
+                    print("  \(name) (\(count) workspaces)\(collapsed)\(color)")
+                }
+            }
+
+        case "action":
+            let (groupOpt, rem0) = parseOption(subArgs, name: "--group")
+            let (actionOpt, rem1) = parseOption(rem0, name: "--action")
+            let (workspaceOpt, rem2) = parseOption(rem1, name: "--workspace")
+            let (titleOpt, rem3) = parseOption(rem2, name: "--title")
+            let (nameOpt, rem4) = parseOption(rem3, name: "--name")
+            let (colorOpt, rem5) = parseOption(rem4, name: "--color")
+
+            var positional = rem5
+            let actionRaw: String
+            if let actionOpt {
+                actionRaw = actionOpt
+            } else if let first = positional.first {
+                actionRaw = first
+                positional.removeFirst()
+            } else {
+                throw CLIError(message: "group action requires --action <name> or a positional action")
+            }
+            let action = actionRaw.lowercased().replacingOccurrences(of: "-", with: "_")
+
+            guard let groupName = groupOpt, !groupName.isEmpty else {
+                throw CLIError(message: "group action requires --group <name>")
+            }
+
+            var params: [String: Any] = ["action": action, "group": groupName]
+            if let ws = workspaceOpt {
+                let resolved = try normalizeWorkspaceHandle(ws, client: client, allowCurrent: false)
+                if let resolved { params["workspace_id"] = resolved }
+            }
+            if let title = titleOpt ?? nameOpt {
+                params["title"] = title
+                params["name"] = title
+            }
+            if let color = colorOpt { params["color"] = color }
+
+            let payload = try client.sendV2(method: "group.action", params: params)
+            var parts = ["OK", "action=\(action)"]
+            if let name = payload["name"] as? String { parts.append("group=\(name)") }
+            printV2Payload(payload, jsonOutput: jsonOutput, idFormat: idFormat, fallbackText: parts.joined(separator: " "))
+
+        default:
+            throw CLIError(message: "Unknown group subcommand '\(subcommand)'. Use: create, delete, list, action")
+        }
     }
 
     private func runTabAction(
@@ -7148,6 +7251,34 @@ struct CMUXCLI {
               cmux workspace-action --action set-description --description "Ship checklist"
               cmux workspace-action --action set-description $'Ship checklist\n- verify build\n- post notes'
               cmux workspace-action clear-color
+            """
+        case "group":
+            return """
+            Usage: cmux group <subcommand> [flags]
+
+            Manage workspace groups in the sidebar.
+
+            Subcommands:
+              create <name> [--color <#hex>]           Create a new group
+              delete <name>                            Delete a group (keeps workspaces)
+              list                                     List all groups
+              action <action> --group <name> [flags]   Perform group actions
+
+            Actions (for 'group action'):
+              add --workspace <ref>        Add workspace to group
+              remove --workspace <ref>     Remove workspace from group
+              collapse                     Collapse group in sidebar
+              expand                       Expand group in sidebar
+              rename --title <text>        Rename group
+              set-color --color <#hex>     Set group background color
+              clear-color                  Remove group color
+
+            Example:
+              cmux group create "Auth Service" --color "#50fa7b"
+              cmux group action add --group "Auth Service" --workspace workspace:10
+              cmux group action collapse --group "Auth Service"
+              cmux group list
+              cmux group delete "Auth Service"
             """
         case "tab-action":
             return """
@@ -14371,6 +14502,7 @@ struct CMUXCLI {
           move-workspace-to-window --workspace <id|ref> --window <id|ref>
           reorder-workspace --workspace <id|ref|index> (--index <n> | --before <id|ref|index> | --after <id|ref|index>) [--window <id|ref|index>]
           workspace-action --action <name> [--workspace <id|ref|index>] [--title <text>] [--color <name|#hex>] [--description <text>]
+          group <create|delete|list|action> [flags]
           list-workspaces
           new-workspace [--name <title>] [--description <text>] [--cwd <path>] [--command <text>]
           ssh <destination> [--name <title>] [--port <n>] [--identity <path>] [--ssh-option <opt>] [--no-focus] [-- <remote-command-args>]

@@ -158,6 +158,41 @@ struct SidebarStatusEntry: Equatable {
     }
 }
 
+struct WorkspaceGroup: Identifiable, Equatable, Codable {
+    let id: UUID
+    var name: String
+    var color: String?
+    var isCollapsed: Bool
+    var workspaceIds: [UUID]
+
+    init(
+        id: UUID = UUID(),
+        name: String,
+        color: String? = nil,
+        isCollapsed: Bool = false,
+        workspaceIds: [UUID] = []
+    ) {
+        self.id = id
+        self.name = name
+        self.color = color
+        self.isCollapsed = isCollapsed
+        self.workspaceIds = workspaceIds
+    }
+
+    func contains(_ workspaceId: UUID) -> Bool {
+        workspaceIds.contains(workspaceId)
+    }
+
+    mutating func add(_ workspaceId: UUID) {
+        guard !workspaceIds.contains(workspaceId) else { return }
+        workspaceIds.append(workspaceId)
+    }
+
+    mutating func remove(_ workspaceId: UUID) {
+        workspaceIds.removeAll { $0 == workspaceId }
+    }
+}
+
 struct SidebarMetadataBlock: Equatable {
     let key: String
     let markdown: String

@@ -9984,6 +9984,20 @@ struct VerticalTabsSidebar: View {
                         // LazyVStack + drag-state invalidations can recurse through layout.
                         VStack(spacing: tabRowSpacing) {
                             ForEach(tabs, id: \.id) { tab in
+                                let groupForTab = tabManager.groupForWorkspace(tab.id)
+                                let isFirstInGroup = groupForTab.map { group in
+                                    group.workspaceIds.first == tab.id
+                                } ?? false
+                                let isLastInGroup = groupForTab.map { group in
+                                    group.workspaceIds.last == tab.id
+                                } ?? false
+                                let isCollapsed = groupForTab?.isCollapsed ?? false
+
+                                if isFirstInGroup, let group = groupForTab {
+                                    WorkspaceGroupHeader(group: group, tabManager: tabManager)
+                                }
+
+                                if !isCollapsed {
                                 let index = tabIndexById[tab.id] ?? 0
                                 let usesSelectedContextMenuTargets = selectedTabIds.contains(tab.id)
                                 let contextMenuWorkspaceIds = usesSelectedContextMenuTargets
@@ -10050,6 +10064,7 @@ struct VerticalTabsSidebar: View {
                                     frozenPresentation: $frozenTabItemPresentation
                                 )
                                 .equatable()
+                                } // end if !isCollapsed
                             }
                         }
                         .padding(.vertical, 8)
@@ -14076,6 +14091,40 @@ private struct TabItemView: View, Equatable {
         tabManager.selectTab(tab)
         setSelectionToTabs()
         _ = AppDelegate.shared?.requestEditWorkspaceDescriptionViaCommandPalette()
+    }
+}
+
+private struct WorkspaceGroupHeader: View {
+    let group: WorkspaceGroup
+    @ObservedObject var tabManager: TabManager
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: group.isCollapsed ? "chevron.right" : "chevron.down")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(.secondary)
+                .frame(width: 10)
+            if let colorHex = group.color,
+               let nsColor = NSColor(hex: colorHex) {
+                Circle()
+                    .fill(Color(nsColor))
+                    .frame(width: 8, height: 8)
+            }
+            Text(group.name)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.primary.opacity(0.7))
+                .lineLimit(1)
+            Spacer()
+            Text("\(group.workspaceIds.count)")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            tabManager.setGroupCollapsed(id: group.id, collapsed: !group.isCollapsed)
+        }
     }
 }
 

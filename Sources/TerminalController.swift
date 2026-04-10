@@ -2089,6 +2089,14 @@ class TerminalController {
             return v2Result(id: id, self.v2WorkspaceRename(params: params))
         case "workspace.action":
             return v2Result(id: id, self.v2WorkspaceAction(params: params))
+        case "group.create":
+            return v2Result(id: id, self.v2GroupCreate(params: params))
+        case "group.delete":
+            return v2Result(id: id, self.v2GroupDelete(params: params))
+        case "group.list":
+            return v2Result(id: id, self.v2GroupList(params: params))
+        case "group.action":
+            return v2Result(id: id, self.v2GroupAction(params: params))
         case "workspace.next":
             return v2Result(id: id, self.v2WorkspaceNext(params: params))
         case "workspace.previous":
@@ -2472,6 +2480,10 @@ class TerminalController {
             "workspace.reorder",
             "workspace.rename",
             "workspace.action",
+            "group.create",
+            "group.delete",
+            "group.list",
+            "group.action",
             "workspace.next",
             "workspace.previous",
             "workspace.last",
@@ -3653,6 +3665,153 @@ class TerminalController {
             "title": title
         ])
     }
+    // MARK: - Workspace Groups
+
+    private func v2GroupCreate(params: [String: Any]) -> V2CallResult {
+        guard let tabManager = v2ResolveTabManager(params: params) else {
+            return .err(code: "unavailable", message: "TabManager not available", data: nil)
+        }
+        guard let name = v2String(params, "name") ?? v2RawString(params, "positional_0"),
+              !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return .err(code: "invalid_params", message: "Missing group name", data: nil)
+        }
+        let color = v2String(params, "color")
+
+        var result: V2CallResult = .err(code: "internal_error", message: "Failed to create group", data: nil)
+        v2MainSync {
+            let group = tabManager.createGroup(name: name.trimmingCharacters(in: .whitespacesAndNewlines), color: color)
+            result = .ok([
+                "group_id": group.id.uuidString,
+                "name": group.name,
+                "color": v2OrNull(group.color)
+            ])
+        }
+        return result
+    }
+
+    private func v2GroupDelete(params: [String: Any]) -> V2CallResult {
+        guard let tabManager = v2ResolveTabManager(params: params) else {
+            return .err(code: "unavailable", message: "TabManager not available", data: nil)
+        }
+        let groupName = v2String(params, "group") ?? v2RawString(params, "positional_0") ?? ""
+
+        var result: V2CallResult = .err(code: "not_found", message: "Group not found", data: nil)
+        v2MainSync {
+            guard let group = tabManager.resolveGroup(nameOrRef: groupName) else { return }
+            tabManager.deleteGroup(id: group.id)
+            result = .ok(["deleted": true, "name": group.name])
+        }
+        return result
+    }
+
+    private func v2GroupList(params: [String: Any]) -> V2CallResult {
+        guard let tabManager = v2ResolveTabManager(params: params) else {
+            return .err(code: "unavailable", message: "TabManager not available", data: nil)
+        }
+
+        var result: V2CallResult = .err(code: "internal_error", message: "Failed to list groups", data: nil)
+        v2MainSync {
+            let groups = tabManager.groups.map { group -> [String: Any] in
+                [
+                    "group_id": group.id.uuidString,
+                    "name": group.name,
+                    "color": v2OrNull(group.color),
+                    "collapsed": group.isCollapsed,
+                    "workspace_count": group.workspaceIds.count,
+                    "workspace_ids": group.workspaceIds.map(\.uuidString)
+                ]
+            }
+            result = .ok(["groups": groups])
+        }
+        return result
+    }
+
+    private func v2GroupAction(params: [String: Any]) -> V2CallResult {
+        guard let tabManager = v2ResolveTabManager(params: params) else {
+            return .err(code: "unavailable", message: "TabManager not available", data: nil)
+        }
+        guard let action = v2ActionKey(params) else {
+            return .err(code: "invalid_params", message: "Missing action", data: nil)
+        }
+
+        let supportedActions = ["add", "remove", "collapse", "expand", "rename", "set_color", "clear_color"]
+        let groupName = v2String(params, "group") ?? ""
+
+        var result: V2CallResult = .err(code: "invalid_params", message: "Unknown group action", data: [
+            "action": action,
+            "supported_actions": supportedActions
+        ])
+
+        v2MainSync {
+            guard let group = tabManager.resolveGroup(nameOrRef: groupName) else {
+                result = .err(code: "not_found", message: "Group '\(groupName)' not found", data: nil)
+                return
+            }
+
+            @MainActor
+            func finish(_ extras: [String: Any] = [:]) {
+                var payload: [String: Any] = [
+                    "action": action,
+                    "group_id": group.id.uuidString,
+                    "name": group.name
+                ]
+                for (key, value) in extras { payload[key] = value }
+                result = .ok(payload)
+            }
+
+            switch action {
+            case "add":
+                guard let workspaceId = v2UUID(params, "workspace_id") else {
+                    result = .err(code: "invalid_params", message: "Missing workspace_id", data: nil)
+                    return
+                }
+                tabManager.addWorkspaceToGroup(groupId: group.id, workspaceId: workspaceId)
+                finish(["workspace_id": workspaceId.uuidString])
+
+            case "remove":
+                guard let workspaceId = v2UUID(params, "workspace_id") else {
+                    result = .err(code: "invalid_params", message: "Missing workspace_id", data: nil)
+                    return
+                }
+                tabManager.removeWorkspaceFromGroup(groupId: group.id, workspaceId: workspaceId)
+                finish(["workspace_id": workspaceId.uuidString])
+
+            case "collapse":
+                tabManager.setGroupCollapsed(id: group.id, collapsed: true)
+                finish(["collapsed": true])
+
+            case "expand":
+                tabManager.setGroupCollapsed(id: group.id, collapsed: false)
+                finish(["collapsed": false])
+
+            case "rename":
+                guard let newName = v2String(params, "title") ?? v2String(params, "name"),
+                      !newName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    result = .err(code: "invalid_params", message: "Missing or invalid title/name", data: nil)
+                    return
+                }
+                tabManager.renameGroup(id: group.id, name: newName.trimmingCharacters(in: .whitespacesAndNewlines))
+                finish(["new_name": newName.trimmingCharacters(in: .whitespacesAndNewlines)])
+
+            case "set_color":
+                guard let color = v2String(params, "color") else {
+                    result = .err(code: "invalid_params", message: "Missing color", data: nil)
+                    return
+                }
+                tabManager.setGroupColor(id: group.id, color: color)
+                finish(["color": color])
+
+            case "clear_color":
+                tabManager.setGroupColor(id: group.id, color: nil)
+                finish(["color": NSNull()])
+
+            default:
+                break
+            }
+        }
+        return result
+    }
+
     private func v2WorkspaceNext(params: [String: Any]) -> V2CallResult {
         guard let tabManager = v2ResolveTabManager(params: params) else {
             return .err(code: "unavailable", message: "TabManager not available", data: nil)
