@@ -613,12 +613,27 @@ enum AppFocusState {
         }
         guard NSApp.isActive else { return false }
         guard let keyWindow = NSApp.keyWindow, keyWindow.isKeyWindow else { return false }
-        // Only treat the app as "focused" for notification suppression when a main terminal window
-        // is key. If Settings/About/debug panels are key, we still want notifications to show.
         if let raw = keyWindow.identifier?.rawValue {
             return raw == "cmux.main" || raw.hasPrefix("cmux.main.")
         }
         return false
+    }
+
+    @MainActor
+    static func isWorkspaceFocused(tabId: UUID) -> Bool {
+        if let overrideIsFocused {
+            return overrideIsFocused
+        }
+        guard NSApp.isActive else { return false }
+        guard let keyWindow = NSApp.keyWindow, keyWindow.isKeyWindow else { return false }
+        guard let raw = keyWindow.identifier?.rawValue,
+              raw == "cmux.main" || raw.hasPrefix("cmux.main.") else {
+            return false
+        }
+        guard let owningWindow = AppDelegate.shared?.mainWindowContainingWorkspace(tabId) else {
+            return false
+        }
+        return owningWindow === keyWindow
     }
 }
 
@@ -932,18 +947,19 @@ final class TerminalNotificationStore: ObservableObject {
             focusedReadIndicatorByTabId.removeValue(forKey: tabId)
         }
 
-        let isActiveTab = AppDelegate.shared?.tabManager?.selectedTabId == tabId
-        let focusedSurfaceId = AppDelegate.shared?.tabManager?.focusedSurfaceId(for: tabId)
+        let owningTabManager = AppDelegate.shared?.tabManagerFor(tabId: tabId)
+            ?? AppDelegate.shared?.tabManager
+        let isActiveTab = owningTabManager?.selectedTabId == tabId
+        let focusedSurfaceId = owningTabManager?.focusedSurfaceId(for: tabId)
         let isFocusedSurface = surfaceId == nil || focusedSurfaceId == surfaceId
-        let isFocusedPanel = isActiveTab && isFocusedSurface
-        let isAppFocused = AppFocusState.isAppFocused()
-        let shouldSuppressExternalDelivery = isAppFocused && isFocusedPanel
-        if shouldSuppressExternalDelivery {
+        let isWorkspaceFocused = AppFocusState.isWorkspaceFocused(tabId: tabId) && isActiveTab
+        let shouldSuppressExternalDelivery = isWorkspaceFocused
+        if shouldSuppressExternalDelivery && isFocusedSurface {
             setFocusedReadIndicator(forTabId: tabId, surfaceId: surfaceId)
         }
 
         if WorkspaceAutoReorderSettings.isEnabled() {
-            AppDelegate.shared?.tabManager?.moveTabToTopForNotification(tabId)
+            owningTabManager?.moveTabToTopForNotification(tabId)
         }
 
         let notification = TerminalNotification(
