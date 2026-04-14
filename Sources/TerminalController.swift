@@ -1741,6 +1741,9 @@ class TerminalController {
         case "clear_notifications":
             return clearNotifications(args)
 
+        case "acknowledge_if_focused":
+            return acknowledgeIfFocused(args)
+
         case "set_app_focus":
             return setAppFocusOverride(args)
 
@@ -12908,6 +12911,22 @@ class TerminalController {
         }
         scheduleSidebarMutation(target: target) { _, tab in
             TerminalNotificationStore.shared.clearNotifications(forTabId: tab.id)
+        }
+        return "OK"
+    }
+
+    private func acknowledgeIfFocused(_ args: String) -> String {
+        let parsed = parseOptions(args.trimmingCharacters(in: .whitespacesAndNewlines))
+        guard let tabOption = parsed.options["tab"],
+              !tabOption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return "ERROR: Usage: acknowledge_if_focused --tab=X"
+        }
+        let targetResolution = parseSidebarMutationTabTarget(options: parsed.options)
+        guard let target = targetResolution.target else {
+            return targetResolution.error ?? "ERROR: Tab not found"
+        }
+        scheduleSidebarMutation(target: target) { _, tab in
+            TerminalNotificationStore.shared.acknowledgeIfFocused(tabId: tab.id)
         }
         return "OK"
     }

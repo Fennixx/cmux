@@ -952,11 +952,19 @@ final class TerminalNotificationStore: ObservableObject {
             ?? AppDelegate.shared?.tabManager
         let isActiveTab = owningTabManager?.selectedTabId == tabId
         let isWorkspaceFocused = AppFocusState.isWorkspaceFocused(tabId: tabId) && isActiveTab
+        let isAcknowledged = acknowledgedWorkspaces.contains(tabId)
 
-        if isWorkspaceFocused || acknowledgedWorkspaces.contains(tabId) {
+#if DEBUG
+        dlog("notify.add tab=\(tabId.uuidString.prefix(8)) title=\(title) focused=\(isWorkspaceFocused) active=\(isActiveTab) acked=\(isAcknowledged) appFocused=\(AppFocusState.isAppFocused()) selectedTab=\(owningTabManager?.selectedTabId?.uuidString.prefix(8) ?? "nil")")
+#endif
+
+        if isWorkspaceFocused || isAcknowledged {
             if isWorkspaceFocused {
                 acknowledgedWorkspaces.insert(tabId)
             }
+#if DEBUG
+            dlog("notify.suppressed tab=\(tabId.uuidString.prefix(8)) title=\(title) reason=\(isWorkspaceFocused ? "focused" : "acknowledged")")
+#endif
             if !idsToClear.isEmpty {
                 notifications = updated
                 center.removeDeliveredNotificationsOffMain(withIdentifiers: idsToClear)
@@ -1123,7 +1131,23 @@ final class TerminalNotificationStore: ObservableObject {
         center.removePendingNotificationRequestsOffMain(withIdentifiers: idsToClear)
     }
 
+    func acknowledgeIfFocused(tabId: UUID) {
+        let owningTabManager = AppDelegate.shared?.tabManagerFor(tabId: tabId)
+            ?? AppDelegate.shared?.tabManager
+        let isActiveTab = owningTabManager?.selectedTabId == tabId
+        let isWorkspaceFocused = AppFocusState.isWorkspaceFocused(tabId: tabId) && isActiveTab
+#if DEBUG
+        dlog("notify.ackIfFocused tab=\(tabId.uuidString.prefix(8)) focused=\(isWorkspaceFocused) active=\(isActiveTab)")
+#endif
+        if isWorkspaceFocused {
+            acknowledgedWorkspaces.insert(tabId)
+        }
+    }
+
     func clearNotifications(forTabId tabId: UUID) {
+#if DEBUG
+        dlog("notify.clearTab tab=\(tabId.uuidString.prefix(8)) wasAcked=\(acknowledgedWorkspaces.contains(tabId))")
+#endif
         acknowledgedWorkspaces.remove(tabId)
         var updated: [TerminalNotification] = []
         updated.reserveCapacity(notifications.count)

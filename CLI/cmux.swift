@@ -12635,6 +12635,8 @@ struct CMUXCLI {
                     _ = try? sendV1Command("notify_target \(workspaceId) \(surfaceId) \(payload)", client: client)
                 }
 
+                _ = try? sendV1Command("acknowledge_if_focused --tab=\(workspaceId)", client: client)
+
                 try? setClaudeStatus(
                     client: client,
                     workspaceId: workspaceId,
