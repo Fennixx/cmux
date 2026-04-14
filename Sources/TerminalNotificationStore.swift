@@ -749,8 +749,6 @@ final class TerminalNotificationStore: ObservableObject {
         store.playSuppressedNotificationFeedback(for: notification)
     }
     private var lastNotificationDateByCooldownKey: [String: Date] = [:]
-    private static let acknowledgedExpiry: TimeInterval = 120
-    private var acknowledgedWorkspaces: [UUID: Date] = [:]
     private var indexes = NotificationIndexes()
 
     private init() {
@@ -953,15 +951,8 @@ final class TerminalNotificationStore: ObservableObject {
             ?? AppDelegate.shared?.tabManager
         let isActiveTab = owningTabManager?.selectedTabId == tabId
         let isWorkspaceFocused = AppFocusState.isWorkspaceFocused(tabId: tabId) && isActiveTab
-        let isAlreadyAcknowledged: Bool = {
-            guard let ackDate = acknowledgedWorkspaces[tabId] else { return false }
-            return now.timeIntervalSince(ackDate) < Self.acknowledgedExpiry
-        }()
 
-        if isWorkspaceFocused || isAlreadyAcknowledged {
-            if isWorkspaceFocused {
-                acknowledgedWorkspaces[tabId] = now
-            }
+        if isWorkspaceFocused {
             if !idsToClear.isEmpty {
                 notifications = updated
                 center.removeDeliveredNotificationsOffMain(withIdentifiers: idsToClear)
@@ -1100,12 +1091,10 @@ final class TerminalNotificationStore: ObservableObject {
     }
 
     func clearAll() {
-        guard !notifications.isEmpty || !focusedReadIndicatorByTabId.isEmpty
-                || !acknowledgedWorkspaces.isEmpty else { return }
+        guard !notifications.isEmpty || !focusedReadIndicatorByTabId.isEmpty else { return }
         let ids = notifications.map { $0.id.uuidString }
         notifications.removeAll()
         focusedReadIndicatorByTabId.removeAll()
-        acknowledgedWorkspaces.removeAll()
         center.removeDeliveredNotificationsOffMain(withIdentifiers: ids)
         center.removePendingNotificationRequestsOffMain(withIdentifiers: ids)
     }
@@ -1139,7 +1128,6 @@ final class TerminalNotificationStore: ObservableObject {
                 updated.append(notification)
             }
         }
-        acknowledgedWorkspaces.removeValue(forKey: tabId)
         guard !idsToClear.isEmpty else { return }
         notifications = updated
         clearFocusedReadIndicator(forTabId: tabId)
@@ -1436,7 +1424,6 @@ final class TerminalNotificationStore: ObservableObject {
     func replaceNotificationsForTesting(_ notifications: [TerminalNotification]) {
         self.notifications = notifications
         focusedReadIndicatorByTabId.removeAll()
-        acknowledgedWorkspaces.removeAll()
     }
 #endif
 
