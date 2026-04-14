@@ -12627,15 +12627,20 @@ struct CMUXCLI {
                     )
                 }
 
-                if let completion {
+                do {
                     let title = "Claude Code"
-                    let subtitle = sanitizeNotificationField(completion.subtitle)
-                    let body = sanitizeNotificationField(completion.body)
+                    let subtitle: String
+                    let body: String
+                    if let completion {
+                        subtitle = sanitizeNotificationField(completion.subtitle)
+                        body = sanitizeNotificationField(completion.body)
+                    } else {
+                        subtitle = ""
+                        body = ""
+                    }
                     let payload = "\(title)|\(subtitle)|\(body)"
                     _ = try? sendV1Command("notify_target \(workspaceId) \(surfaceId) \(payload)", client: client)
                 }
-
-                _ = try? sendV1Command("acknowledge_if_focused --tab=\(workspaceId)", client: client)
 
                 try? setClaudeStatus(
                     client: client,
