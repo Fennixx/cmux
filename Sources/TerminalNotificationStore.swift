@@ -951,16 +951,19 @@ final class TerminalNotificationStore: ObservableObject {
         let owningTabManager = AppDelegate.shared?.tabManagerFor(tabId: tabId)
             ?? AppDelegate.shared?.tabManager
         let isActiveTab = owningTabManager?.selectedTabId == tabId
-        let focusedSurfaceId = owningTabManager?.focusedSurfaceId(for: tabId)
-        let isFocusedSurface = surfaceId == nil || focusedSurfaceId == surfaceId
         let isWorkspaceFocused = AppFocusState.isWorkspaceFocused(tabId: tabId) && isActiveTab
         let isAlreadyAcknowledged = acknowledgedWorkspaces.contains(tabId)
-        let shouldSuppressExternalDelivery = isWorkspaceFocused || isAlreadyAcknowledged
-        if isWorkspaceFocused {
-            acknowledgedWorkspaces.insert(tabId)
-        }
-        if shouldSuppressExternalDelivery && isFocusedSurface {
-            setFocusedReadIndicator(forTabId: tabId, surfaceId: surfaceId)
+
+        if isWorkspaceFocused || isAlreadyAcknowledged {
+            if isWorkspaceFocused {
+                acknowledgedWorkspaces.insert(tabId)
+            }
+            if !idsToClear.isEmpty {
+                notifications = updated
+                center.removeDeliveredNotificationsOffMain(withIdentifiers: idsToClear)
+                center.removePendingNotificationRequestsOffMain(withIdentifiers: idsToClear)
+            }
+            return
         }
 
         if WorkspaceAutoReorderSettings.isEnabled() {
@@ -986,11 +989,7 @@ final class TerminalNotificationStore: ObservableObject {
             center.removeDeliveredNotificationsOffMain(withIdentifiers: idsToClear)
             center.removePendingNotificationRequestsOffMain(withIdentifiers: idsToClear)
         }
-        if shouldSuppressExternalDelivery {
-            suppressedNotificationFeedbackHandler(self, notification)
-        } else {
-            notificationDeliveryHandler(self, notification)
-        }
+        notificationDeliveryHandler(self, notification)
     }
 
     func markRead(id: UUID) {
