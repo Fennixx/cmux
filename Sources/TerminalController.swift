@@ -12917,16 +12917,14 @@ class TerminalController {
 
     private func acknowledgeIfFocused(_ args: String) -> String {
         let parsed = parseOptions(args.trimmingCharacters(in: .whitespacesAndNewlines))
-        guard let tabOption = parsed.options["tab"],
-              !tabOption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            return "ERROR: Usage: acknowledge_if_focused --tab=X"
+        guard let tabOption = parsed.options["tab"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+              !tabOption.isEmpty,
+              let tabId = UUID(uuidString: tabOption) else {
+            return "ERROR: Usage: acknowledge_if_focused --tab=<uuid>"
         }
-        let targetResolution = parseSidebarMutationTabTarget(options: parsed.options)
-        guard let target = targetResolution.target else {
-            return targetResolution.error ?? "ERROR: Tab not found"
-        }
-        scheduleSidebarMutation(target: target) { _, tab in
-            TerminalNotificationStore.shared.acknowledgeIfFocused(tabId: tab.id)
+        DispatchQueue.main.async {
+            TerminalNotificationStore.shared.acknowledgeIfFocused(tabId: tabId)
         }
         return "OK"
     }
