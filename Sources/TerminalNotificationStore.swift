@@ -749,6 +749,8 @@ final class TerminalNotificationStore: ObservableObject {
         store.playSuppressedNotificationFeedback(for: notification)
     }
     private var lastNotificationDateByCooldownKey: [String: Date] = [:]
+    private static let focusSuppressionGracePeriod: TimeInterval = 90
+    private var lastFocusSuppressionDateByTabId: [UUID: Date] = [:]
     private var indexes = NotificationIndexes()
 
     private init() {
@@ -953,7 +955,14 @@ final class TerminalNotificationStore: ObservableObject {
         let focusedSurfaceId = owningTabManager?.focusedSurfaceId(for: tabId)
         let isFocusedSurface = surfaceId == nil || focusedSurfaceId == surfaceId
         let isWorkspaceFocused = AppFocusState.isWorkspaceFocused(tabId: tabId) && isActiveTab
-        let shouldSuppressExternalDelivery = isWorkspaceFocused
+        let withinFocusGracePeriod: Bool = {
+            guard let lastSuppressed = lastFocusSuppressionDateByTabId[tabId] else { return false }
+            return now.timeIntervalSince(lastSuppressed) < Self.focusSuppressionGracePeriod
+        }()
+        let shouldSuppressExternalDelivery = isWorkspaceFocused || withinFocusGracePeriod
+        if isWorkspaceFocused {
+            lastFocusSuppressionDateByTabId[tabId] = now
+        }
         if shouldSuppressExternalDelivery && isFocusedSurface {
             setFocusedReadIndicator(forTabId: tabId, surfaceId: surfaceId)
         }
@@ -1092,10 +1101,12 @@ final class TerminalNotificationStore: ObservableObject {
     }
 
     func clearAll() {
-        guard !notifications.isEmpty || !focusedReadIndicatorByTabId.isEmpty else { return }
+        guard !notifications.isEmpty || !focusedReadIndicatorByTabId.isEmpty
+                || !lastFocusSuppressionDateByTabId.isEmpty else { return }
         let ids = notifications.map { $0.id.uuidString }
         notifications.removeAll()
         focusedReadIndicatorByTabId.removeAll()
+        lastFocusSuppressionDateByTabId.removeAll()
         center.removeDeliveredNotificationsOffMain(withIdentifiers: ids)
         center.removePendingNotificationRequestsOffMain(withIdentifiers: ids)
     }
@@ -1129,6 +1140,7 @@ final class TerminalNotificationStore: ObservableObject {
                 updated.append(notification)
             }
         }
+        lastFocusSuppressionDateByTabId.removeValue(forKey: tabId)
         guard !idsToClear.isEmpty else { return }
         notifications = updated
         clearFocusedReadIndicator(forTabId: tabId)
@@ -1425,6 +1437,7 @@ final class TerminalNotificationStore: ObservableObject {
     func replaceNotificationsForTesting(_ notifications: [TerminalNotification]) {
         self.notifications = notifications
         focusedReadIndicatorByTabId.removeAll()
+        lastFocusSuppressionDateByTabId.removeAll()
     }
 #endif
 
