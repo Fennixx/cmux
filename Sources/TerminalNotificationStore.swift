@@ -749,7 +749,8 @@ final class TerminalNotificationStore: ObservableObject {
         store.playSuppressedNotificationFeedback(for: notification)
     }
     private var lastNotificationDateByCooldownKey: [String: Date] = [:]
-    private var acknowledgedWorkspaces: Set<UUID> = []
+    private static let acknowledgedExpiry: TimeInterval = 120
+    private var acknowledgedWorkspaces: [UUID: Date] = [:]
     private var indexes = NotificationIndexes()
 
     private init() {
@@ -952,11 +953,14 @@ final class TerminalNotificationStore: ObservableObject {
             ?? AppDelegate.shared?.tabManager
         let isActiveTab = owningTabManager?.selectedTabId == tabId
         let isWorkspaceFocused = AppFocusState.isWorkspaceFocused(tabId: tabId) && isActiveTab
-        let isAlreadyAcknowledged = acknowledgedWorkspaces.contains(tabId)
+        let isAlreadyAcknowledged: Bool = {
+            guard let ackDate = acknowledgedWorkspaces[tabId] else { return false }
+            return now.timeIntervalSince(ackDate) < Self.acknowledgedExpiry
+        }()
 
         if isWorkspaceFocused || isAlreadyAcknowledged {
             if isWorkspaceFocused {
-                acknowledgedWorkspaces.insert(tabId)
+                acknowledgedWorkspaces[tabId] = now
             }
             if !idsToClear.isEmpty {
                 notifications = updated
@@ -1135,7 +1139,7 @@ final class TerminalNotificationStore: ObservableObject {
                 updated.append(notification)
             }
         }
-        acknowledgedWorkspaces.remove(tabId)
+        acknowledgedWorkspaces.removeValue(forKey: tabId)
         guard !idsToClear.isEmpty else { return }
         notifications = updated
         clearFocusedReadIndicator(forTabId: tabId)
