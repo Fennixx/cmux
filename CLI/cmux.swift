@@ -13011,6 +13011,13 @@ struct CMUXCLI {
            (try? client.sendV2(method: "surface.list", params: ["workspace_id": candidate])) != nil {
             return candidate
         }
+        if let envWorkspaceId = ProcessInfo.processInfo.environment["CMUX_WORKSPACE_ID"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !envWorkspaceId.isEmpty,
+           isUUID(envWorkspaceId),
+           (try? client.sendV2(method: "surface.list", params: ["workspace_id": envWorkspaceId])) != nil {
+            return envWorkspaceId
+        }
         if let callerWorkspaceId = resolveCallerWorkspaceIdByTTY(client: client),
            (try? client.sendV2(method: "surface.list", params: ["workspace_id": callerWorkspaceId])) != nil {
             return callerWorkspaceId
@@ -13032,6 +13039,18 @@ struct CMUXCLI {
                 ($0["id"] as? String) == candidate || ($0["ref"] as? String) == candidate
             }) {
                 return candidate
+            }
+        }
+        if let envSurfaceId = ProcessInfo.processInfo.environment["CMUX_SURFACE_ID"]?
+            .trimmingCharacters(in: .whitespacesAndNewlines),
+           !envSurfaceId.isEmpty,
+           isUUID(envSurfaceId),
+           let listed = try? client.sendV2(method: "surface.list", params: ["workspace_id": workspaceId]) {
+            let items = listed["surfaces"] as? [[String: Any]] ?? []
+            if items.contains(where: {
+                ($0["id"] as? String) == envSurfaceId || ($0["ref"] as? String) == envSurfaceId
+            }) {
+                return envSurfaceId
             }
         }
         if let callerSurfaceId = resolveCallerSurfaceIdByTTY(workspaceId: workspaceId, client: client),
