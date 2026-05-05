@@ -9875,9 +9875,6 @@ struct VerticalTabsSidebar: View {
         }
         .accessibilityIdentifier("Sidebar")
         .ignoresSafeArea()
-        .overlay(alignment: .trailing) {
-            SidebarTrailingBorder()
-        }
         .background(
             WindowAccessor { window in
                 modifierKeyMonitor.setHostWindow(window)
@@ -10075,8 +10072,44 @@ struct VerticalTabsSidebar: View {
         // Workspaces are bounded, so prefer a non-lazy stack here.
         // LazyVStack + drag-state invalidations can recurse through layout.
         VStack(spacing: tabRowSpacing) {
-            ForEach(renderContext.tabs, id: \.id) { tab in
-                workspaceRow(tab, renderContext: renderContext)
+            let sections = tabManager.sidebarLayout()
+            if sections.isEmpty || tabManager.groups.isEmpty {
+                ForEach(renderContext.tabs, id: \.id) { tab in
+                    workspaceRow(tab, renderContext: renderContext)
+                }
+            } else {
+                ForEach(Array(sections.enumerated()), id: \.offset) { _, section in
+                    if let group = section.group {
+                        let groupColor: Color = {
+                            if let hex = group.color, let ns = NSColor(hex: hex) {
+                                return Color(ns)
+                            }
+                            return .gray
+                        }()
+                        VStack(spacing: 0) {
+                            WorkspaceGroupHeader(group: group, tabManager: tabManager)
+                            if !group.isCollapsed {
+                                VStack(spacing: tabRowSpacing) {
+                                    ForEach(section.workspaces, id: \.id) { tab in
+                                        workspaceRow(tab, renderContext: renderContext)
+                                    }
+                                }
+                                .padding(.horizontal, 4)
+                                .padding(.bottom, 6)
+                            }
+                        }
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(groupColor.opacity(0.15))
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .padding(.horizontal, 4)
+                    } else {
+                        ForEach(section.workspaces, id: \.id) { tab in
+                            workspaceRow(tab, renderContext: renderContext)
+                        }
+                    }
+                }
             }
         }
         .padding(.vertical, SidebarWorkspaceListMetrics.rowVerticalPadding)
@@ -13526,6 +13559,37 @@ private struct TabItemView: View, Equatable {
             }
         }
 
+        Menu("Move to Group") {
+            let currentGroup = tabManager.groupForWorkspace(tab.id)
+            if currentGroup != nil {
+                Button("No Group") {
+                    if let group = currentGroup {
+                        tabManager.removeWorkspaceFromGroup(groupId: group.id, workspaceId: tab.id)
+                    }
+                }
+                Divider()
+            }
+            ForEach(tabManager.groups) { group in
+                let isCurrent = currentGroup?.id == group.id
+                Button {
+                    tabManager.addWorkspaceToGroup(groupId: group.id, workspaceId: tab.id)
+                } label: {
+                    Label {
+                        Text(group.name)
+                    } icon: {
+                        if let hex = group.color, let ns = NSColor(hex: hex) {
+                            Image(nsImage: coloredCircleImage(color: ns))
+                        }
+                    }
+                }
+                .disabled(isCurrent)
+            }
+            Divider()
+            Button("New Group…") {
+                promptNewGroupForWorkspace(tab.id)
+            }
+        }
+
         if let copyableSidebarSSHError = workspaceSnapshot.copyableSidebarSSHError {
             Button(String(localized: "contextMenu.copySshError", defaultValue: "Copy SSH Error")) {
                 WorkspaceSurfaceIdentifierClipboardText.copy(copyableSidebarSSHError)
@@ -13663,6 +13727,24 @@ private struct TabItemView: View, Equatable {
             colorScheme: colorScheme,
             forceBright: activeTabIndicatorStyle == .leftRail
         ) ?? NSColor(hex: hex) ?? .gray
+    }
+
+    private func promptNewGroupForWorkspace(_ workspaceId: UUID) {
+        let alert = NSAlert()
+        alert.messageText = "New Group"
+        alert.informativeText = "Enter a name for the new group"
+        alert.alertStyle = .informational
+        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        input.placeholderString = "Group name"
+        alert.accessoryView = input
+        alert.addButton(withTitle: "Create")
+        alert.addButton(withTitle: "Cancel")
+        if alert.runModal() == .alertFirstButtonReturn {
+            let name = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else { return }
+            let group = tabManager.createGroup(name: name)
+            tabManager.addWorkspaceToGroup(groupId: group.id, workspaceId: workspaceId)
+        }
     }
 
     private var showsCenteredTopDropIndicator: Bool {
@@ -15919,5 +16001,48 @@ extension NSColor {
             return String(format: "#%02X%02X%02X%02X", redByte, greenByte, blueByte, alphaByte)
         }
         return String(format: "#%02X%02X%02X", redByte, greenByte, blueByte)
+    }
+}
+
+private struct WorkspaceGroupHeader: View {
+    let group: WorkspaceGroup
+    @ObservedObject var tabManager: TabManager
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: group.isCollapsed ? "chevron.right" : "chevron.down")
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(.secondary)
+                .frame(width: 10)
+            if let colorHex = group.color,
+               let nsColor = NSColor(hex: colorHex) {
+                Circle()
+                    .fill(Color(nsColor))
+                    .frame(width: 8, height: 8)
+            }
+            Text(group.name)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.primary.opacity(0.7))
+                .lineLimit(1)
+            Spacer()
+            Text("\(group.workspaceIds.count)")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            tabManager.setGroupCollapsed(id: group.id, collapsed: !group.isCollapsed)
+        }
+        .contextMenu {
+            Button(group.isCollapsed ? "Expand" : "Collapse") {
+                tabManager.setGroupCollapsed(id: group.id, collapsed: !group.isCollapsed)
+            }
+            Divider()
+            Button("Dissolve Group") {
+                tabManager.deleteGroup(id: group.id)
+            }
+        }
     }
 }
