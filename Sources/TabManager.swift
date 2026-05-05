@@ -904,6 +904,8 @@ class TabManager: ObservableObject {
     weak var window: NSWindow?
 
     @Published var tabs: [Workspace] = []
+    @Published var groups: [WorkspaceGroup] = []
+    var groupStructureRevision: UInt64 = 0
     @Published private(set) var isWorkspaceCycleHot: Bool = false
     @Published private(set) var pendingBackgroundWorkspaceLoadIds: Set<UUID> = []
     @Published private(set) var debugPinnedWorkspaceLoadIds: Set<UUID> = []
@@ -7294,9 +7296,22 @@ extension TabManager {
         let selectedWorkspaceIndex = selectedTabId.flatMap { selectedTabId in
             restorableTabs.firstIndex(where: { $0.id == selectedTabId })
         }
+        let restorableTabIds = Array(restorableTabs.map(\.id))
+        let tabIdToIndex = Dictionary(uniqueKeysWithValues: restorableTabIds.enumerated().map { ($1, $0) })
+        let groupSnapshots: [SessionWorkspaceGroupSnapshot]? = groups.isEmpty ? nil : groups.compactMap { group in
+            let indices = group.workspaceIds.compactMap { tabIdToIndex[$0] }
+            guard !indices.isEmpty else { return nil }
+            return SessionWorkspaceGroupSnapshot(
+                name: group.name,
+                color: group.color,
+                isCollapsed: group.isCollapsed,
+                workspaceIndices: indices
+            )
+        }
         return SessionTabManagerSnapshot(
             selectedWorkspaceIndex: selectedWorkspaceIndex,
-            workspaces: workspaceSnapshots
+            workspaces: workspaceSnapshots,
+            groups: groupSnapshots
         )
     }
 
@@ -7400,6 +7415,25 @@ extension TabManager {
                 object: nil,
                 userInfo: [GhosttyNotificationKey.tabId: selectedTabId]
             )
+        }
+
+        if let savedGroups = snapshot.groups {
+            let restoredTabs = tabs
+            groups = savedGroups.compactMap { groupSnapshot in
+                let restoredIds = groupSnapshot.workspaceIndices.compactMap { index -> UUID? in
+                    guard restoredTabs.indices.contains(index) else { return nil }
+                    return restoredTabs[index].id
+                }
+                guard !restoredIds.isEmpty else { return nil }
+                return WorkspaceGroup(
+                    name: groupSnapshot.name,
+                    color: groupSnapshot.color,
+                    isCollapsed: groupSnapshot.isCollapsed,
+                    workspaceIds: restoredIds
+                )
+            }
+        } else {
+            groups = []
         }
     }
 }
