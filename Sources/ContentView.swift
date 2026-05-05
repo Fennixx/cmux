@@ -10126,6 +10126,9 @@ struct VerticalTabsSidebar: View {
                         )
                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                         .padding(.horizontal, 4)
+                        .onDrop(of: SidebarTabDragPayload.dropContentTypes, isTargeted: nil) { providers in
+                            WorkspaceGroupDropHandler.handle(providers: providers, groupId: group.id, tabManager: tabManager)
+                        }
                     } else {
                         ForEach(section.workspaces, id: \.id) { tab in
                             workspaceRow(tab, renderContext: renderContext)
@@ -16031,6 +16034,7 @@ extension NSColor {
 private struct WorkspaceGroupHeader: View {
     let group: WorkspaceGroup
     @ObservedObject var tabManager: TabManager
+    @State private var isDropTarget = false
 
     var body: some View {
         HStack(spacing: 6) {
@@ -16055,9 +16059,19 @@ private struct WorkspaceGroupHeader: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color.accentColor.opacity(isDropTarget ? 0.25 : 0))
+        )
         .contentShape(Rectangle())
         .onTapGesture {
             tabManager.setGroupCollapsed(id: group.id, collapsed: !group.isCollapsed)
+        }
+        .onDrop(
+            of: SidebarTabDragPayload.dropContentTypes,
+            isTargeted: $isDropTarget
+        ) { providers in
+            WorkspaceGroupDropHandler.handle(providers: providers, groupId: group.id, tabManager: tabManager)
         }
         .contextMenu {
             Button(group.isCollapsed ? "Expand" : "Collapse") {
@@ -16068,5 +16082,25 @@ private struct WorkspaceGroupHeader: View {
                 tabManager.deleteGroup(id: group.id)
             }
         }
+    }
+}
+
+enum WorkspaceGroupDropHandler {
+    @MainActor
+    static func handle(providers: [NSItemProvider], groupId: UUID, tabManager: TabManager) -> Bool {
+        guard let provider = providers.first(where: { $0.hasItemConformingToTypeIdentifier(SidebarTabDragPayload.typeIdentifier) }) else {
+            return false
+        }
+        provider.loadDataRepresentation(forTypeIdentifier: SidebarTabDragPayload.typeIdentifier) { data, _ in
+            guard let data, let payload = String(data: data, encoding: .utf8) else { return }
+            let prefix = "cmux.sidebar-tab."
+            guard payload.hasPrefix(prefix) else { return }
+            let uuidString = String(payload.dropFirst(prefix.count))
+            guard let uuid = UUID(uuidString: uuidString) else { return }
+            DispatchQueue.main.async {
+                tabManager.addWorkspaceToGroup(groupId: groupId, workspaceId: uuid)
+            }
+        }
+        return true
     }
 }
