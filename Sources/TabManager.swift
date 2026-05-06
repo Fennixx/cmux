@@ -2784,6 +2784,12 @@ class TabManager: ObservableObject {
         cachedEntry: WorkspacePullRequestRepoCacheEntry?,
         useCachedRecentWindow: Bool
     ) async -> WorkspacePullRequestRepoFetchResult {
+#if DEBUG
+        cmuxDebugLog(
+            "workspace.prRefresh.gitlab.start host=\(identity.host) path=\(identity.projectPath) " +
+            "useCache=\(useCachedRecentWindow)"
+        )
+#endif
         if useCachedRecentWindow, let cachedEntry {
 #if DEBUG
             cmuxDebugLog(
@@ -2800,6 +2806,12 @@ class TabManager: ObservableObject {
 #endif
             return .transientFailure
         }
+#if DEBUG
+        cmuxDebugLog(
+            "workspace.prRefresh.gitlab.fetched host=\(identity.host) path=\(identity.projectPath) " +
+            "merge_requests=\(mergeRequests.count)"
+        )
+#endif
 
         var probesByBranch: [String: GitHubPullRequestProbeItem] = [:]
         for mergeRequest in mergeRequests {
@@ -3523,12 +3535,22 @@ class TabManager: ObservableObject {
 
     private nonisolated static func githubRepositorySlugs(directory: String) async -> [String] {
         guard let output = await runGitCommand(directory: directory, arguments: ["remote", "-v"]) else {
+            #if DEBUG
+            cmuxDebugLog("workspace.repoSlugs.detect.fail dir=…\(directory.suffix(40)) reason=git-remote-failed")
+            #endif
             return []
         }
-        var slugs = githubRepositorySlugs(fromGitRemoteVOutput: output)
+        let githubSlugs = githubRepositorySlugs(fromGitRemoteVOutput: output)
         let gitlabIdentities = GitLabRemoteParser.projectIdentities(fromGitRemoteVOutput: output)
-        slugs.append(contentsOf: gitlabIdentities.map { $0.slug })
-        return slugs
+        let combined = githubSlugs + gitlabIdentities.map { $0.slug }
+        #if DEBUG
+        cmuxDebugLog(
+            "workspace.repoSlugs.detect dir=…\(directory.suffix(40)) " +
+            "github=\(githubSlugs.count) gitlab=\(gitlabIdentities.count) " +
+            "first_gitlab=\(gitlabIdentities.first?.slug ?? "nil")"
+        )
+        #endif
+        return combined
     }
 
     private nonisolated static func githubRemotePriority(_ remoteName: String) -> Int {

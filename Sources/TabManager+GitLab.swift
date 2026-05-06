@@ -111,6 +111,51 @@ enum GitLabFetcher {
         return await runGlabRaw(arguments: arguments, timeout: timeout)
     }
 
+    /// Diagnostic helper: confirms whether the process spawn machinery itself works.
+    /// Spawns `/bin/echo` so the result has nothing to do with glab, network, or auth.
+    static func runEchoSmokeTest() async -> Data? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/echo")
+        process.arguments = ["smoke"]
+        let stdout = Pipe()
+        process.standardOutput = stdout
+        process.standardError = Pipe()
+        process.standardInput = FileHandle.nullDevice
+        return await withCheckedContinuation { continuation in
+            var didResume = false
+            let resumeOnce: (Data?) -> Void = { value in
+                guard !didResume else { return }
+                didResume = true
+                continuation.resume(returning: value)
+            }
+            let timeoutItem = DispatchWorkItem {
+#if DEBUG
+                cmuxDebugLog("gitlab.smoke.echo.timeout")
+#endif
+                if process.isRunning { process.terminate() }
+                resumeOnce(nil)
+            }
+            DispatchQueue.global().asyncAfter(deadline: .now() + 2.0, execute: timeoutItem)
+            process.terminationHandler = { proc in
+                timeoutItem.cancel()
+                let data = (try? stdout.fileHandleForReading.readToEnd()) ?? Data()
+#if DEBUG
+                cmuxDebugLog("gitlab.smoke.echo.terminate status=\(proc.terminationStatus) bytes=\(data.count)")
+#endif
+                resumeOnce(data)
+            }
+            do {
+                try process.run()
+            } catch {
+                timeoutItem.cancel()
+#if DEBUG
+                cmuxDebugLog("gitlab.smoke.echo.spawnFail error=\(error)")
+#endif
+                resumeOnce(nil)
+            }
+        }
+    }
+
     /// Multi-page fetch of merge requests for a single project. Pages stop early when fewer items
     /// than perPage come back (last page) or when the page limit is hit.
     static func fetchProjectMergeRequests(
@@ -185,8 +230,20 @@ enum GitLabFetcher {
 
     private static func runGlabRaw(arguments: [String], timeout: TimeInterval) async -> Data? {
         guard let executableURL = glabExecutableURL() else {
+#if DEBUG
+            cmuxDebugLog("gitlab.glab.exec.notFound")
+#endif
             return nil
         }
+#if DEBUG
+        let envInfo = ProcessInfo.processInfo.environment
+        cmuxDebugLog(
+            "gitlab.glab.exec.spawn path=\(executableURL.path) " +
+            "HOME=\(envInfo["HOME"] ?? "<missing>") " +
+            "hasGLABTOKEN=\(envInfo["GLAB_TOKEN"] != nil) " +
+            "hasGITLABTOKEN=\(envInfo["GITLAB_TOKEN"] != nil)"
+        )
+#endif
         return await withCheckedContinuation { continuation in
             let process = Process()
             process.executableURL = executableURL
@@ -195,17 +252,58 @@ enum GitLabFetcher {
             let stderr = Pipe()
             process.standardOutput = stdout
             process.standardError = stderr
-            process.environment = ProcessInfo.processInfo.environment
+            process.standardInput = FileHandle.nullDevice
+
+            // Provide a minimal environment so glab can read its config from $HOME/.config/glab-cli.
+            var env = ProcessInfo.processInfo.environment
+            if env["HOME"] == nil {
+                env["HOME"] = NSHomeDirectory()
+            }
+            if env["PATH"] == nil {
+                env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
+            }
+            env["GLAB_NO_PROMPT"] = "1"
+            env["NO_COLOR"] = "1"
+            env["GLAB_NO_UPDATE_NOTIFIER"] = "1"
+            process.environment = env
+
+            // Drain stdout / stderr continuously so glab cannot block on write when its output
+            // exceeds the OS pipe buffer (~64kB on macOS). Without this, large JSON responses
+            // from `glab api` deadlock the child process and our terminationHandler never fires.
+            let outBuffer = OutputBuffer()
+            let errBuffer = OutputBuffer()
+            stdout.fileHandleForReading.readabilityHandler = { handle in
+                let chunk = handle.availableData
+                if chunk.isEmpty {
+                    handle.readabilityHandler = nil
+                } else {
+                    outBuffer.append(chunk)
+                }
+            }
+            stderr.fileHandleForReading.readabilityHandler = { handle in
+                let chunk = handle.availableData
+                if chunk.isEmpty {
+                    handle.readabilityHandler = nil
+                } else {
+                    errBuffer.append(chunk)
+                }
+            }
 
             var didResume = false
             let resumeOnce: (Data?) -> Void = { value in
                 guard !didResume else { return }
                 didResume = true
+                stdout.fileHandleForReading.readabilityHandler = nil
+                stderr.fileHandleForReading.readabilityHandler = nil
                 continuation.resume(returning: value)
             }
 
             let timeoutItem = DispatchWorkItem {
                 if process.isRunning {
+#if DEBUG
+                    let argSummary = arguments.suffix(2).joined(separator: " ")
+                    cmuxDebugLog("gitlab.glab.exec.timeout args=\(argSummary)")
+#endif
                     process.terminate()
                 }
                 resumeOnce(nil)
@@ -214,10 +312,25 @@ enum GitLabFetcher {
 
             process.terminationHandler = { proc in
                 timeoutItem.cancel()
-                let data = (try? stdout.fileHandleForReading.readToEnd()) ?? Data()
+                // Give the readabilityHandler a moment to drain final bytes before we tear down.
+                let outData = outBuffer.snapshot()
+                let errData = errBuffer.snapshot()
+#if DEBUG
+                cmuxDebugLog(
+                    "gitlab.glab.exec.terminate status=\(proc.terminationStatus) " +
+                    "reason=\(proc.terminationReason.rawValue) bytes=\(outData.count)"
+                )
+#endif
                 if proc.terminationStatus == 0 {
-                    resumeOnce(data)
+#if DEBUG
+                    cmuxDebugLog("gitlab.glab.exec.ok status=0 bytes=\(outData.count)")
+#endif
+                    resumeOnce(outData)
                 } else {
+#if DEBUG
+                    let errSnippet = String(data: errData.prefix(160), encoding: .utf8) ?? "<binary>"
+                    cmuxDebugLog("gitlab.glab.exec.fail status=\(proc.terminationStatus) err=\(errSnippet)")
+#endif
                     resumeOnce(nil)
                 }
             }
@@ -225,10 +338,31 @@ enum GitLabFetcher {
             do {
                 try process.run()
             } catch {
+#if DEBUG
+                cmuxDebugLog("gitlab.glab.exec.spawnFail error=\(error)")
+#endif
                 timeoutItem.cancel()
                 resumeOnce(nil)
             }
         }
+    }
+}
+
+/// Thread-safe accumulator for child-process pipe output read via `readabilityHandler`.
+private final class OutputBuffer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var data = Data()
+
+    func append(_ chunk: Data) {
+        lock.lock()
+        data.append(chunk)
+        lock.unlock()
+    }
+
+    func snapshot() -> Data {
+        lock.lock()
+        defer { lock.unlock() }
+        return data
     }
 }
 
