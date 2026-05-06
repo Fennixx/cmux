@@ -46,6 +46,7 @@
 		E3309A01 /* AppDelegate+EqualizeSplitsShortcut.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3309A02 /* AppDelegate+EqualizeSplitsShortcut.swift */; };
 		E3309A03 /* TabManager+EqualizeSplits.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3309A04 /* TabManager+EqualizeSplits.swift */; };
 		FE0001A1 /* TabManager+Groups.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0001A0 /* TabManager+Groups.swift */; };
+		FE0001B1 /* TabManager+GitLab.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0001B0 /* TabManager+GitLab.swift */; };
 		E3309A05 /* Workspace+EqualizeSplitsSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3309A06 /* Workspace+EqualizeSplitsSupport.swift */; };
 		E3309A07 /* cmuxApp+EqualizeSplitsMenu.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3309A08 /* cmuxApp+EqualizeSplitsMenu.swift */; };
 		E3309A09 /* AppDelegateEqualizeSplitsShortcutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3309A0A /* AppDelegateEqualizeSplitsShortcutTests.swift */; };
@@ -562,6 +563,7 @@
 		A5001013 /* TabManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabManager.swift; sourceTree = "<group>"; };
 		E3309A04 /* TabManager+EqualizeSplits.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TabManager+EqualizeSplits.swift"; sourceTree = "<group>"; };
 		FE0001A0 /* TabManager+Groups.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TabManager+Groups.swift"; sourceTree = "<group>"; };
+		FE0001B0 /* TabManager+GitLab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "TabManager+GitLab.swift"; sourceTree = "<group>"; };
 		C5CC15CEAA80B779ADEE78AA /* WorkspaceActionDispatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceActionDispatcher.swift; sourceTree = "<group>"; };
 		E30750000000000000000001 /* WorkspaceTabColorResolution.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkspaceTabColorResolution.swift; sourceTree = "<group>"; };
 		A5001014 /* GhosttyConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GhosttyConfig.swift; sourceTree = "<group>"; };
@@ -1028,6 +1030,7 @@
 					A5001013 /* TabManager.swift */,
 					E3309A04 /* TabManager+EqualizeSplits.swift */,
 					FE0001A0 /* TabManager+Groups.swift */,
+					FE0001B0 /* TabManager+GitLab.swift */,
 					C5CC15CEAA80B779ADEE78AA /* WorkspaceActionDispatcher.swift */,
 					D7AB00000000000000000014 /* TabManager+DetachedWorkspace.swift */,
 					E30750000000000000000001 /* WorkspaceTabColorResolution.swift */,
@@ -1606,6 +1609,7 @@
 					A5001003 /* TabManager.swift in Sources */,
 					E3309A03 /* TabManager+EqualizeSplits.swift in Sources */,
 					FE0001A1 /* TabManager+Groups.swift in Sources */,
+					FE0001B1 /* TabManager+GitLab.swift in Sources */,
 					7D77A0EBBE3D8E05CDC16229 /* WorkspaceActionDispatcher.swift in Sources */,
 					D7AB00000000000000000013 /* TabManager+DetachedWorkspace.swift in Sources */,
 					E30750000000000000000002 /* WorkspaceTabColorResolution.swift in Sources */,

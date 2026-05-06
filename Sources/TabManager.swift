@@ -790,6 +790,7 @@ class TabManager: ObservableObject {
         let urlString: String
         let statusRawValue: String
         let branch: String
+        let label: String
     }
 
     private struct WorkspacePullRequestRefreshResult: Sendable {
@@ -1507,7 +1508,7 @@ class TabManager: ObservableObject {
                 workspace.updatePanelPullRequest(
                     panelId: result.panelId,
                     number: resolvedPullRequest.number,
-                    label: "PR",
+                    label: resolvedPullRequest.label,
                     url: url,
                     status: status,
                     branch: resolvedPullRequest.branch,
@@ -2543,17 +2544,29 @@ class TabManager: ObservableObject {
         ) { group in
             for repoSlug in repoDirectoriesBySlug.keys {
                 group.addTask {
-                    let result = await Self.workspacePullRequestRepoFetchResult(
-                        repoSlug: repoSlug,
-                        candidateBranches: candidateBranchesByRepo[repoSlug] ?? [],
-                        cachedEntry: cacheBySlug[repoSlug],
-                        useCachedRecentWindow: allowCachedResults
-                            && (cacheBySlug[repoSlug].map {
-                                now.timeIntervalSince($0.fetchedAt) < Self.workspacePullRequestRepoCacheLifetime
-                            } ?? false),
-                        session: session,
-                        authHeader: authHeader
-                    )
+                    let result: WorkspacePullRequestRepoFetchResult
+                    if let identity = GitLabProjectIdentity.fromSlug(repoSlug) {
+                        result = await Self.gitlabRepoFetchResult(
+                            identity: identity,
+                            cachedEntry: cacheBySlug[repoSlug],
+                            useCachedRecentWindow: allowCachedResults
+                                && (cacheBySlug[repoSlug].map {
+                                    now.timeIntervalSince($0.fetchedAt) < Self.workspacePullRequestRepoCacheLifetime
+                                } ?? false)
+                        )
+                    } else {
+                        result = await Self.workspacePullRequestRepoFetchResult(
+                            repoSlug: repoSlug,
+                            candidateBranches: candidateBranchesByRepo[repoSlug] ?? [],
+                            cachedEntry: cacheBySlug[repoSlug],
+                            useCachedRecentWindow: allowCachedResults
+                                && (cacheBySlug[repoSlug].map {
+                                    now.timeIntervalSince($0.fetchedAt) < Self.workspacePullRequestRepoCacheLifetime
+                                } ?? false),
+                            session: session,
+                            authHeader: authHeader
+                        )
+                    }
                     return (repoSlug, result)
                 }
             }
@@ -2587,6 +2600,7 @@ class TabManager: ObservableObject {
 
             var matchedPullRequest: GitHubPullRequestProbeItem?
             var matchedPullRequestUsedCache = false
+            var matchedRepoSlug: String?
             var sawTransientFailure = false
             var sawCachedSuccess = false
 
@@ -2600,6 +2614,7 @@ class TabManager: ObservableObject {
                     if let candidateMatch = cacheEntry.pullRequestsByBranch[candidate.branch] {
                         matchedPullRequest = candidateMatch
                         matchedPullRequestUsedCache = usedCache
+                        matchedRepoSlug = repoSlug
                         break
                     }
                     if transientBranches.contains(candidate.branch) {
@@ -2614,12 +2629,14 @@ class TabManager: ObservableObject {
             let usedCachedRepoData: Bool
             if let matchedPullRequest,
                let status = pullRequestStatus(from: matchedPullRequest.state) {
+                let label = matchedRepoSlug?.hasPrefix(GitLabProjectIdentity.slugPrefix) == true ? "MR" : "PR"
                 resolution = .resolved(
                     WorkspacePullRequestResolvedItem(
                         number: matchedPullRequest.number,
                         urlString: matchedPullRequest.url,
                         statusRawValue: status.rawValue,
-                        branch: candidate.branch
+                        branch: candidate.branch,
+                        label: label
                     )
                 )
                 usedCachedRepoData = matchedPullRequestUsedCache
@@ -2757,6 +2774,68 @@ class TabManager: ObservableObject {
             usedCache: false,
             transientBranches: lookupOutcome.transientBranches
         )
+    }
+
+    /// Fetches all merge requests for a GitLab project via the bundled `glab` CLI and converts
+    /// them into the same cache-entry shape used by the GitHub pipeline so the downstream
+    /// resolution logic can stay agnostic.
+    private nonisolated static func gitlabRepoFetchResult(
+        identity: GitLabProjectIdentity,
+        cachedEntry: WorkspacePullRequestRepoCacheEntry?,
+        useCachedRecentWindow: Bool
+    ) async -> WorkspacePullRequestRepoFetchResult {
+        if useCachedRecentWindow, let cachedEntry {
+#if DEBUG
+            cmuxDebugLog(
+                "workspace.prRefresh.gitlab.cache host=\(identity.host) path=\(identity.projectPath) " +
+                "branches=\(cachedEntry.pullRequestsByBranch.count)"
+            )
+#endif
+            return .success(cachedEntry, usedCache: true, transientBranches: [])
+        }
+
+        guard let mergeRequests = await GitLabFetcher.fetchProjectMergeRequests(identity: identity) else {
+#if DEBUG
+            cmuxDebugLog("workspace.prRefresh.gitlab.fail host=\(identity.host) path=\(identity.projectPath)")
+#endif
+            return .transientFailure
+        }
+
+        var probesByBranch: [String: GitHubPullRequestProbeItem] = [:]
+        for mergeRequest in mergeRequests {
+            guard let branch = mergeRequest.sourceBranch.flatMap(normalizedBranchName) else { continue }
+            let stateUpper: String
+            switch mergeRequest.state {
+            case "opened", "open", "locked":
+                stateUpper = "OPEN"
+            case "closed":
+                stateUpper = "CLOSED"
+            case "merged":
+                stateUpper = "MERGED"
+            default:
+                stateUpper = mergeRequest.state.uppercased()
+            }
+            let probe = GitHubPullRequestProbeItem(
+                number: mergeRequest.iid,
+                state: stateUpper,
+                url: mergeRequest.webURL,
+                updatedAt: mergeRequest.updatedAt,
+                mergedAt: mergeRequest.mergedAt,
+                headRefName: mergeRequest.sourceBranch ?? branch,
+                baseRefName: mergeRequest.targetBranch
+            )
+            // Only the most recent merge request per branch should win; the GitLab API already
+            // returns results sorted descending by updated_at.
+            if probesByBranch[branch] == nil {
+                probesByBranch[branch] = probe
+            }
+        }
+
+        let entry = WorkspacePullRequestRepoCacheEntry(
+            fetchedAt: Date(),
+            pullRequestsByBranch: probesByBranch
+        )
+        return .success(entry, usedCache: false, transientBranches: [])
     }
 
     private nonisolated static func unresolvedWorkspacePullRequestBranches(
@@ -3446,7 +3525,10 @@ class TabManager: ObservableObject {
         guard let output = await runGitCommand(directory: directory, arguments: ["remote", "-v"]) else {
             return []
         }
-        return githubRepositorySlugs(fromGitRemoteVOutput: output)
+        var slugs = githubRepositorySlugs(fromGitRemoteVOutput: output)
+        let gitlabIdentities = GitLabRemoteParser.projectIdentities(fromGitRemoteVOutput: output)
+        slugs.append(contentsOf: gitlabIdentities.map { $0.slug })
+        return slugs
     }
 
     private nonisolated static func githubRemotePriority(_ remoteName: String) -> Int {
