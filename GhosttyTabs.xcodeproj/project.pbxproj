@@ -2079,7 +2079,7 @@
 				CODE_SIGN_ENTITLEMENTS = Resources/cmux.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 83;
+				CURRENT_PROJECT_VERSION = 84;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = NO;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -2088,7 +2088,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.64.3;
+				MARKETING_VERSION = 0.64.4;
 				ONLY_ACTIVE_ARCH = NO;
 				OTHER_LDFLAGS = (
 					"-lc++",
@@ -2103,9 +2103,9 @@
 					"-framework",
 					Carbon,
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.cmuxterm.app;
-				PRODUCT_NAME = cmux;
-				SPARKLE_PUBLIC_KEY = "avjcgKibf1FTvhIjLBxhd+0HSpsXU4D0IGlVk8cgqRc=";
+				PRODUCT_BUNDLE_IDENTIFIER = com.fennixx.cmux;
+				PRODUCT_NAME = "Fennixx CMUX";
+				SPARKLE_PUBLIC_KEY = "6AM8P2GV0RMjnmcaBk9m9Q4K6S/DnnbHXUmqkA41/E8=";
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OBJC_BRIDGING_HEADER = "cmux-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
