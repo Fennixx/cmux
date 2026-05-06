@@ -10260,6 +10260,12 @@ struct VerticalTabsSidebar: View {
             frozenPresentation: $frozenTabItemPresentation
         )
         .equatable()
+        .overlay(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .stroke(Color.white.opacity(0.12), lineWidth: 1)
+                .padding(.horizontal, 2)
+                .allowsHitTesting(false)
+        )
         .id(tab.id)
         .accessibilityIdentifier("sidebarWorkspace.\(tab.id.uuidString)")
         .preference(key: SidebarWorkspaceRowIdsPreferenceKey.self, value: Set([tab.id]))
