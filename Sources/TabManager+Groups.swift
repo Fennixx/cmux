@@ -94,6 +94,30 @@ extension TabManager {
         return sections
     }
 
+    /// Reorders `workspaceId` inside `groupId` so it sits immediately before or after `anchorId`
+    /// (depending on edge). Caller must ensure `workspaceId` already belongs to the target group;
+    /// otherwise the call is a no-op aside from a revision bump.
+    func reorderWorkspaceInGroup(
+        groupId: UUID,
+        workspaceId: UUID,
+        anchorId: UUID,
+        edge: SidebarDropEdge
+    ) {
+        guard let groupIndex = groups.firstIndex(where: { $0.id == groupId }) else { return }
+        var ids = groups[groupIndex].workspaceIds
+        ids.removeAll { $0 == workspaceId }
+        guard let anchorIndex = ids.firstIndex(of: anchorId) else {
+            ids.append(workspaceId)
+            groups[groupIndex].workspaceIds = ids
+            bumpGroupRevision()
+            return
+        }
+        let insertIndex = (edge == .top) ? anchorIndex : anchorIndex + 1
+        ids.insert(workspaceId, at: insertIndex)
+        groups[groupIndex].workspaceIds = ids
+        bumpGroupRevision()
+    }
+
     func cleanupGroupsForRemovedWorkspace(_ workspaceId: UUID) {
         var changed = false
         for i in groups.indices {

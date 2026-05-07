@@ -15090,6 +15090,41 @@ private struct SidebarTabDropDelegate: DropDelegate {
 #endif
             return false
         }
+
+        // Resolve current group memberships so we can keep them in sync with the visible drop
+        // target. Without this, drops onto a grouped tile only reorder the flat tabs[] array
+        // while groups[].workspaceIds keeps the dragged tile in its original group, making the
+        // tile appear to jump back to the end of the sidebar.
+        let draggedGroup = tabManager.groupForWorkspace(draggedTabId)
+        let targetGroup = targetTabId.flatMap { tabManager.groupForWorkspace($0) }
+        let dropEdge = dropIndicator?.edge ?? .bottom
+
+        if draggedGroup?.id != targetGroup?.id {
+            if let oldGroup = draggedGroup {
+                tabManager.removeWorkspaceFromGroup(groupId: oldGroup.id, workspaceId: draggedTabId)
+            }
+            if let newGroup = targetGroup {
+                tabManager.addWorkspaceToGroup(groupId: newGroup.id, workspaceId: draggedTabId)
+            }
+        }
+
+        if let group = targetGroup, let anchorId = targetTabId, anchorId != draggedTabId {
+            tabManager.reorderWorkspaceInGroup(
+                groupId: group.id,
+                workspaceId: draggedTabId,
+                anchorId: anchorId,
+                edge: dropEdge
+            )
+#if DEBUG
+            cmuxDebugLog(
+                "sidebar.drop.commitGrouped tab=\(draggedTabId.uuidString.prefix(5)) " +
+                "group=\(group.id.uuidString.prefix(5)) anchor=\(anchorId.uuidString.prefix(5)) edge=\(dropEdge)"
+            )
+#endif
+            syncSidebarSelection()
+            return true
+        }
+
         let tabIds = tabManager.tabs.map(\.id)
         guard let targetIndex = SidebarDropPlanner.targetIndex(
             draggedTabId: draggedTabId,
