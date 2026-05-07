@@ -16059,11 +16059,75 @@ private struct WorkspaceGroupHeader: View {
             Button(group.isCollapsed ? "Expand" : "Collapse") {
                 tabManager.setGroupCollapsed(id: group.id, collapsed: !group.isCollapsed)
             }
+            Button("Rename Group…") {
+                promptRenameGroup()
+            }
+            Menu("Group Color") {
+                if group.color != nil {
+                    Button("Clear Color") {
+                        tabManager.setGroupColor(id: group.id, color: nil)
+                    }
+                }
+                Button("Custom Color…") {
+                    promptGroupColor()
+                }
+                Divider()
+                ForEach(WorkspaceTabColorSettings.palette(), id: \.id) { entry in
+                    Button {
+                        tabManager.setGroupColor(id: group.id, color: entry.hex)
+                    } label: {
+                        Label {
+                            Text(entry.name)
+                        } icon: {
+                            if let ns = NSColor(hex: entry.hex) {
+                                Image(nsImage: coloredCircleImage(color: ns))
+                            }
+                        }
+                    }
+                }
+            }
             Divider()
             Button("Dissolve Group") {
                 tabManager.deleteGroup(id: group.id)
             }
         }
+    }
+
+    private func promptRenameGroup() {
+        let alert = NSAlert()
+        alert.messageText = "Rename Group"
+        let input = NSTextField(string: group.name)
+        input.frame = NSRect(x: 0, y: 0, width: 240, height: 22)
+        alert.accessoryView = input
+        alert.addButton(withTitle: "Rename")
+        alert.addButton(withTitle: "Cancel")
+        let alertWindow = alert.window
+        alertWindow.initialFirstResponder = input
+        DispatchQueue.main.async { alertWindow.makeFirstResponder(input); input.selectText(nil) }
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return }
+        let name = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        tabManager.renameGroup(id: group.id, name: name)
+    }
+
+    private func promptGroupColor() {
+        let alert = NSAlert()
+        alert.messageText = "Group Color"
+        alert.informativeText = "Enter a hex color (#RRGGBB) or leave empty to clear."
+        let input = NSTextField(string: group.color ?? "")
+        input.placeholderString = "#50fa7b"
+        input.frame = NSRect(x: 0, y: 0, width: 240, height: 22)
+        alert.accessoryView = input
+        alert.addButton(withTitle: "Apply")
+        alert.addButton(withTitle: "Cancel")
+        let alertWindow = alert.window
+        alertWindow.initialFirstResponder = input
+        DispatchQueue.main.async { alertWindow.makeFirstResponder(input); input.selectText(nil) }
+        let response = alert.runModal()
+        guard response == .alertFirstButtonReturn else { return }
+        let raw = input.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        tabManager.setGroupColor(id: group.id, color: raw.isEmpty ? nil : raw)
     }
 }
 
