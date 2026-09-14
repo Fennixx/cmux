@@ -9,6 +9,7 @@ The execution host needs tmux 3.2+, a project directory, and the selected agent 
 Session metadata lives in tmux's per-session environment (`CMUX_MACHINE_TITLE`, `CMUX_MACHINE_PROJECT`, `CMUX_MACHINE_AGENT`). A fresh client discovers sessions directly from the host. The `cmux-agent-<uuid>` name remains opaque and stable. Detaching a viewer does not terminate the agent; End explicitly kills its exact managed tmux session. Rebooting the host or exiting the agent ends its live session; this version does not claim reboot recovery or conversation-history synchronization.
 
 Run focused tests with `swift test --package-path Packages/macOS/CmuxMachineSessions`.
+To include the real SSH lifecycle test, point `CMUX_MACHINE_TEST_HOST` at an explicitly prepared, disposable SSH fixture (for example the loopback-only server from `scripts/remote-tmux-fuzz-host.sh`). The test owns a unique sleep-only session and removes only that session.
 
 ## Trying the macOS UI
 

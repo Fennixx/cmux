@@ -114,6 +114,43 @@ struct MachineSessionTests {
         }
     }
 
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["CMUX_MACHINE_TEST_HOST"] != nil))
+    func sshFixtureCanBeDiscoveredAndReopenedByAnotherClient() async throws {
+        let destination = try #require(ProcessInfo.processInfo.environment["CMUX_MACHINE_TEST_HOST"])
+        let remote = MachineProfile(name: "Explicit SSH fixture", destination: destination)
+        let commands = MachineSessionCommands()
+        try commands.validate(remote)
+        let runner = CommandRunner()
+        let session = sample()
+        let arguments = ["tmux", "new-session", "-d", "-s", session.id,
+                         "-e", "CMUX_MACHINE_TITLE=" + session.title,
+                         "-e", "CMUX_MACHINE_PROJECT=" + session.project,
+                         "-e", "CMUX_MACHINE_AGENT=" + session.agent.rawValue, "/bin/sleep 60"]
+        let started = await runner.run(directory: "/private/tmp", executable: "/usr/bin/ssh", arguments: [
+            "-o", "BatchMode=yes", "--", destination, arguments.map(commands.quote).joined(separator: " ")
+        ], timeout: 10)
+        try #require(started.exitStatus == 0)
+        let first = MachineSessionService(runner: runner, directory: "/private/tmp")
+        let second = MachineSessionService(runner: runner, directory: "/private/tmp")
+        do {
+            _ = try await first.probe(remote)
+            #expect(try await first.sessions(remote).contains(session))
+            let detachCommand = "printf 'detach-client\\n' | tmux -C attach-session -t " + commands.quote("=" + session.id)
+            let detached = await runner.run(directory: "/private/tmp", executable: "/usr/bin/ssh", arguments: [
+                "-o", "BatchMode=yes", "--", destination, detachCommand
+            ], timeout: 10)
+            #expect(detached.exitStatus == 0)
+            #expect(try await second.sessions(remote).contains(session))
+            try await second.create(session, on: remote)
+            #expect(try await second.sessions(remote).contains(session))
+            try await second.end(session, on: remote)
+            #expect(try await first.sessions(remote).allSatisfy { $0.id != session.id })
+        } catch {
+            try? await first.end(session, on: remote)
+            throw error
+        }
+    }
+
     private func sample() -> MachineSession {
         MachineSession(id: "cmux-agent-" + UUID().uuidString.lowercased(), title: "Test", project: "/private/tmp", agent: .claude)
     }
