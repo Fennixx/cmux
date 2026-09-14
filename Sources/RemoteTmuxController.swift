@@ -363,6 +363,10 @@ final class RemoteTmuxController {
         else { return }
         let mirror = entry.value
         let oldName = mirror.sessionName
+        if mirror.preserveSessionOnClose {
+            mirror.agentSessionDisplayTitle = name
+            return
+        }
         guard name != oldName, mirror.connection.connectionState == .connected else { return }
         // Target by the stable session id when known, so the rename can't race a
         // prior rename's name.
@@ -702,7 +706,9 @@ final class RemoteTmuxController {
                 sessionMirrors.removeValue(forKey: key)
                 mirror.detachObserver()
                 detach(host: host, sessionName: mirror.sessionName)  // removes the connection too
-                jobs.append((transport(for: host), mirror.connection.sessionId.map { "$\($0)" } ?? mirror.sessionName))
+                if !mirror.preserveSessionOnClose {
+                    jobs.append((transport(for: host), mirror.connection.sessionId.map { "$\($0)" } ?? mirror.sessionName))
+                }
                 if !sessionMirrors.values.contains(where: { $0.host.connectionHash == host.connectionHash }),
                    !connectionsByHostSession.values.contains(where: { $0.host.connectionHash == host.connectionHash }) {
                     transportRegistry.remove(connectionHash: host.connectionHash)
@@ -722,10 +728,14 @@ final class RemoteTmuxController {
         if !hostHasOtherMirrors, !connectionsByHostSession.values.contains(where: { $0.host.connectionHash == host.connectionHash }) { transportRegistry.remove(connectionHash: host.connectionHash); RemoteTmuxSSHTransport.spawnControlMasterExit(host: host) }
     }
 
-    /// User-initiated mirrored workspace close detaches locally and kills the remote session.
+    /// Workspace close detaches managed agent sessions; ordinary mirrors retain kill-on-close.
     func handleWorkspaceClosed(workspaceId: UUID) {
         guard let entry = sessionMirrors.first(where: { $0.value.mirroredWorkspaceId == workspaceId })
         else { return }
+        if entry.value.preserveSessionOnClose {
+            detachMirrorWorkspaceKeptOpenLocally(workspaceId: workspaceId)
+            return
+        }
         let mirror = entry.value
         let host = mirror.host
         let sessionName = mirror.sessionName

@@ -818,6 +818,10 @@ struct cmuxApp: App {
 
             // New tab commands
             CommandGroup(replacing: .newItem) {
+                Button(String(localized: "machines.menu", defaultValue: "Agent Session on Computer…")) {
+                    appDelegate.showMachineSessions(nil)
+                }
+
                 splitCommandButton(title: String(localized: "menu.file.newWindow", defaultValue: "New Window"), shortcut: menuShortcut(for: .newWindow)) {
                     appDelegate.openNewMainWindow(nil)
                 }
