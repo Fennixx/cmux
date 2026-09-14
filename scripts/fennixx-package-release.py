@@ -89,7 +89,7 @@ def main():
         raise ValueError("Signing key does not match the app's public key")
     run(["codesign", "--verify", "--deep", "--strict", str(app)], check=True)
     for binary in [app / "Contents/MacOS" / info["CFBundleExecutable"], app / "Contents/Resources/machine/bin/cmux-machine", app / "Contents/Resources/machine/bin/tmux"]:
-        run(["lipo", "-verify_arch", "arm64", str(binary)], check=True)
+        run(["lipo", str(binary), "-verify_arch", "arm64"], check=True)
     out = args.out.resolve()
     out.mkdir(parents=False, exist_ok=False)
     dmg = out / "cmux-macos.dmg"
