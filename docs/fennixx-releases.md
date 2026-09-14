@@ -4,6 +4,8 @@ The fork now follows upstream cmux 0.64.23 plus Mac-to-Mac machine sessions. Old
 
 ## Installation and trust
 
+This first packaged release requires **Apple Silicon and macOS 26 or later**: the bundled tmux and libevent were built for macOS 26. The Release deployment target and appcast enforce that requirement. Earlier macOS support needs rebuilding those dependencies for an earlier deployment target; do not merely lower the appcast minimum.
+
 Version 0.65.0 starts a new Ed25519 update key because the old private key could not be located. Install it manually once on each Apple Silicon Mac. Replace **Fennixx CMUX**, not the unrelated official **cmux**. macOS may require System Settings → Privacy & Security → Open Anyway for this explicitly trusted download: this personal build is ad-hoc code signed and is **not Apple-notarized**. Do not disable Gatekeeper globally.
 
 Subsequent releases use Sparkle's Check for Updates. The app retains `com.fennixx.cmux` and reads `https://github.com/Fennixx/cmux/releases/latest/download/appcast.xml`. Never mark an assetless or preview release as latest. The new key cannot update older installed apps automatically.

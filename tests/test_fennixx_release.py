@@ -10,7 +10,7 @@ spec.loader.exec_module(release)
 
 class ReleaseTests(unittest.TestCase):
     def setUp(self):
-        self.info = dict(CFBundleIdentifier="com.fennixx.cmux", CFBundleName="Fennixx CMUX", SUFeedURL=release.FEED, SUPublicEDKey=release.PUBLIC_KEY, CFBundleVersion="104", CFBundleShortVersionString="0.65.0", LSMinimumSystemVersion="14.0")
+        self.info = dict(CFBundleIdentifier="com.fennixx.cmux", CFBundleName="Fennixx CMUX", SUFeedURL=release.FEED, SUPublicEDKey=release.PUBLIC_KEY, CFBundleVersion="104", CFBundleShortVersionString="0.65.0", LSMinimumSystemVersion="26.0")
 
     def test_identity_key_feed_and_version_must_match(self):
         release.validate_info(self.info, "v0.65.0")
@@ -19,6 +19,8 @@ class ReleaseTests(unittest.TestCase):
                 release.validate_info(dict(self.info, **{field: ""}), "v0.65.0")
         with self.assertRaises(ValueError):
             release.validate_info(self.info, "v0.65.1")
+        with self.assertRaises(ValueError):
+            release.validate_info(dict(self.info, LSMinimumSystemVersion="14.0"), "v0.65.0")
 
     def test_appcast_is_scoped_to_fork_version_and_architecture(self):
         root = ET.fromstring(release.make_appcast(self.info, "v0.65.0", "cmux-macos.dmg", 123, "A" * 86 + "=="))

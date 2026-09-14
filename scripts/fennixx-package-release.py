@@ -39,6 +39,8 @@ def validate_info(info, tag):
         raise ValueError("App build number must be numeric")
     if not info.get("LSMinimumSystemVersion"):
         raise ValueError("Minimum macOS version is missing")
+    if int(info["LSMinimumSystemVersion"].split(".")[0]) < 26:
+        raise ValueError("Bundled tmux dependencies require macOS 26; do not advertise older macOS")
 
 
 def make_appcast(info, tag, asset_name, size, signature):
