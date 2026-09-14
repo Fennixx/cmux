@@ -4,6 +4,22 @@ import CmuxFoundation
 @testable import CmuxMachineSessions
 
 struct MachinePairingTests {
+    @Test func localAttachmentWorksUnderGhosttyExecWrapper() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("cmux bin ' " + UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let stub = directory.appendingPathComponent("tmux")
+        try Data("#!/bin/sh\nprintf 'ATTACH:%s\\n' \"$*\"\n".utf8).write(to: stub)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: stub.path)
+        let runner = CommandRunner()
+        let service = MachineSessionService(runner: runner, directory: directory.path, bundledBin: directory.path)
+        let session = MachineSession(id: "cmux-agent-" + UUID().uuidString.lowercased(), title: "Exec fixture", project: directory.path, agent: .codex)
+        let command = try await service.localAttachCommand(session)
+        let result = await runner.run(directory: directory.path, executable: "/bin/bash", arguments: ["--noprofile", "--norc", "-c", "exec -l " + command], timeout: 5)
+        #expect(result.exitStatus == 0)
+        #expect(result.stdout?.contains("ATTACH:attach-session -t =" + session.id) == true)
+    }
+
     @Test(arguments: ["127.0.0.1", "0.0.0.0", "8.8.8.8", "100.63.0.1", "100.128.0.1", "100.064.0.1", "host.tailnet.ts.net", "100.64.0.1.evil.test"])
     func publicOrAmbiguousEndpointsAreRejected(_ host: String) throws {
         let code = MachinePairingCode(endpoint: MachineEndpoint(serverID: UUID(), host: host, port: 1234, credential: String(repeating: "a", count: 64)), name: "Mac", expiresAt: Date())
