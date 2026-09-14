@@ -93,7 +93,8 @@ public actor MachineSessionService {
     /// - Returns: Quoted command that attaches without starting another agent.
     /// - Throws: Invalid session identity.
     public func localAttachCommand(_ session: MachineSession) throws -> String {
-        let prefix = bundledBin.map { "export PATH=" + commands.quote($0) + ":\"$PATH\"; " } ?? ""
-        return prefix + (try commands.attach(machine: MachineProfile(name: "", destination: ""), session: session))
+        // Ghostty prepends exec to initial commands. Environment setup must stay
+        // inside the executable shell invocation, never before it as a builtin.
+        try commands.attach(machine: MachineProfile(name: "", destination: ""), session: session)
     }
 }
