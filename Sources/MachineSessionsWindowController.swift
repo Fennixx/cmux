@@ -42,7 +42,8 @@ final class MachineSessionsWindowController {
     }
 
     private func open(machine: MachineProfile, session: MachineSession, appDelegate: AppDelegate) async throws {
-        guard var manager = appDelegate.tabManager else { throw MachineSessionError.connection("No active cmux window") }
+        if appDelegate.activeTabManagerForCommands() == nil { _ = appDelegate.createMainWindow() }
+        guard var manager = appDelegate.activeTabManagerForCommands() else { throw MachineSessionError.connection("No active cmux window") }
         if machine.isLocal {
             if let id = localWorkspaces[session.id], let owner = appDelegate.tabManagerFor(tabId: id) {
                 manager = owner
@@ -71,6 +72,9 @@ final class MachineSessionsWindowController {
                     manager.selectedTabId = workspaceID
                     // A custom title would rename the remote tmux session and destroy its stable ID.
                     mirror.applySessionNameToWorkspaceTitle(session.id)
+                }
+                guard await mirror.connection.waitUntilConnected() else {
+                    throw MachineSessionError.connection("The tmux control connection ended before attachment.")
                 }
             }
         }

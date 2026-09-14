@@ -74,6 +74,7 @@ final class MachineSessionsModel {
             if !installed.contains(agent), let first = installed.first { agent = first }
             sessions = discovered
             connected = true
+            if installed.isEmpty { error = MachineSessionError.agentMissing.localizedDescription }
         } catch {
             guard generation == token else { return }
             sessions = []
@@ -87,10 +88,13 @@ final class MachineSessionsModel {
         let destination = newMachineDestination.trimmingCharacters(in: .whitespacesAndNewlines)
         let name = newMachineName.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !destination.isEmpty else { return }
+        busy = true
+        defer { busy = false }
         let machine = MachineProfile(name: name.isEmpty ? destination : name, destination: destination)
         do {
             try MachineSessionCommands().validate(machine)
             if let existing = machines.first(where: { $0.destination == destination }) {
+                busy = false
                 select(existing.id)
                 return
             }
@@ -99,12 +103,15 @@ final class MachineSessionsModel {
             machines = updated
             newMachineName = ""
             newMachineDestination = ""
+            busy = false
             select(machine.id)
         } catch { self.error = error.localizedDescription }
     }
 
     func removeMachine() async {
         guard let machine = selectedMachine, !machine.isLocal, !busy else { return }
+        busy = true
+        defer { busy = false }
         do {
             let updated = machines.filter { $0.id != machine.id }
             try await repository.save(updated)

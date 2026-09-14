@@ -7,13 +7,20 @@ struct MachineSessionsView: View {
     @State private var sessionToEnd: MachineSession?
 
     var body: some View {
+        // Register collection-row dependencies in this observing body, before
+        // SwiftUI evaluates deferred ForEach content closures.
+        let machines = model.machines
+        let selectedID = model.selectedID
+        let busy = model.busy
+        let agents = model.agents
+        let sessions = model.sessions
         HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 14) {
                 Text(String(localized: "machines.computers", defaultValue: "Computers"))
                     .font(.title2.weight(.semibold))
                 ScrollView {
                     VStack(spacing: 6) {
-                        ForEach(model.machines) { machine in
+                        ForEach(machines) { machine in
                             Button { model.select(machine.id) } label: {
                                 HStack {
                                     Image(systemName: machine.isLocal ? "laptopcomputer" : "desktopcomputer")
@@ -25,10 +32,10 @@ struct MachineSessionsView: View {
                                     Spacer()
                                 }
                                 .padding(10)
-                                .background(model.selectedID == machine.id ? Color.accentColor.opacity(0.14) : Color.clear)
+                                .background(selectedID == machine.id ? Color.accentColor.opacity(0.14) : Color.clear)
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                             }
-                            .buttonStyle(.plain).disabled(model.busy)
+                            .buttonStyle(.plain).disabled(busy)
                         }
                     }
                 }
@@ -76,7 +83,7 @@ struct MachineSessionsView: View {
                         TextField(String(localized: "machines.sessionName", defaultValue: "Session name (optional)"), text: $model.title)
                         Picker(String(localized: "machines.agent", defaultValue: "Agent"), selection: $model.agent) {
                             ForEach(MachineAgent.allCases) { agent in
-                                Text(verbatim: agent.displayName).tag(agent).disabled(!model.agents.contains(agent))
+                                Text(verbatim: agent.displayName).tag(agent).disabled(!agents.contains(agent))
                             }
                         }.pickerStyle(.segmented)
                         HStack {
@@ -97,7 +104,7 @@ struct MachineSessionsView: View {
                 }
                 ScrollView {
                     VStack(spacing: 10) {
-                        ForEach(model.sessions) { session in
+                        ForEach(sessions) { session in
                             HStack(spacing: 12) {
                                 Image(systemName: "terminal")
                                 VStack(alignment: .leading, spacing: 4) {
