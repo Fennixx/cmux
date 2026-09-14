@@ -3,7 +3,9 @@ import Foundation
 /// Builds quoted shell commands for host-owned sessions without interpolating executable input.
 public struct MachineSessionCommands: Sendable {
     /// Constructs the command builder.
-    public init() {}
+    /// - Parameter bundledBin: App-owned binary directory, prepended to every host launch environment.
+    public init(bundledBin: String? = nil) { self.bundledBin = bundledBin }
+    private let bundledBin: String?
 
     /// Quotes one POSIX shell argument, preserving all literal characters.
     /// - Parameter value: Argument contents.
@@ -39,8 +41,9 @@ public struct MachineSessionCommands: Sendable {
     }
 
     var prelude: String {
-        """
-        export PATH="$HOME/.local/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+        let prefix = bundledBin.map { quote($0) + ":" } ?? ""
+        return """
+        export PATH=\(prefix)"$HOME/.local/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
         unset TMUX CMUX_WORKSPACE_ID CMUX_SURFACE_ID CMUX_SOCKET_PATH CMUX_SOCKET CMUX_TAB_ID
         command -v tmux >/dev/null 2>&1 || exit 72
         """

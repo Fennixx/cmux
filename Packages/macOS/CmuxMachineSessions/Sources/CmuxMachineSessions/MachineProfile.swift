@@ -10,6 +10,8 @@ public struct MachineProfile: Codable, Sendable, Identifiable, Equatable {
     public var destination: String
     /// Absolute project directories on this host, most recently used first.
     public var projects: [String]
+    /// Paired private-network endpoint; absent for local or legacy SSH profiles.
+    public var endpoint: MachineEndpoint?
 
     /// Creates a host profile.
     /// - Parameters:
@@ -25,5 +27,5 @@ public struct MachineProfile: Codable, Sendable, Identifiable, Equatable {
     }
 
     /// Whether commands execute on this computer without SSH.
-    public var isLocal: Bool { destination.isEmpty }
+    public var isLocal: Bool { destination.isEmpty && endpoint == nil }
 }

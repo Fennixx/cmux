@@ -20,9 +20,9 @@ public actor MachineProfileRepository {
     /// - Parameter profiles: Entire current catalog.
     /// - Throws: Encoding or filesystem errors.
     public func save(_ profiles: [MachineProfile]) throws {
-        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        try encoder.encode(profiles).write(to: url, options: .atomic)
+        try MachinePrivateFile().write(encoder.encode(profiles), to: url)
     }
 }

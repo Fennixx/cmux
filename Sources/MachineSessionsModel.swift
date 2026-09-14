@@ -18,6 +18,11 @@ final class MachineSessionsModel {
     var connected = false
     var error: String?
     var catalogLoaded = false
+    var sharing = false
+    var pairingCode = ""
+    private let sharingHost: MachineSharingHost?
+    private let tailscaleAddress: @Sendable () async throws -> String
+    private let network = MachineNetworkClient()
     private var generation = UUID()
     private var pendingLaunch: (machineID: UUID, session: MachineSession)?
     private let service: MachineSessionService
@@ -29,11 +34,15 @@ final class MachineSessionsModel {
         service: MachineSessionService,
         repository: MachineProfileRepository,
         localProfile: MachineProfile,
+        sharingHost: MachineSharingHost? = nil,
+        tailscaleAddress: @escaping @Sendable () async throws -> String = { throw MachineSessionError.invalidInput },
         openSession: @escaping @MainActor (MachineProfile, MachineSession) async throws -> Void
     ) {
         self.service = service
         self.repository = repository
         self.localProfile = localProfile
+        self.sharingHost = sharingHost
+        self.tailscaleAddress = tailscaleAddress
         self.openSession = openSession
     }
 
@@ -85,20 +94,13 @@ final class MachineSessionsModel {
 
     func addMachine() async {
         guard catalogLoaded, !busy else { return }
-        let destination = newMachineDestination.trimmingCharacters(in: .whitespacesAndNewlines)
-        let name = newMachineName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !destination.isEmpty else { return }
+        let code = newMachineDestination.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !code.isEmpty else { return }
         busy = true
         defer { busy = false }
-        let machine = MachineProfile(name: name.isEmpty ? destination : name, destination: destination)
         do {
-            try MachineSessionCommands().validate(machine)
-            if let existing = machines.first(where: { $0.destination == destination }) {
-                busy = false
-                select(existing.id)
-                return
-            }
-            let updated = machines + [machine]
+            let machine = try await network.pair(code: code, clientName: localProfile.name)
+            let updated = machines.filter { $0.endpoint?.serverID != machine.endpoint?.serverID } + [machine]
             try await repository.save(updated)
             machines = updated
             newMachineName = ""
@@ -106,6 +108,41 @@ final class MachineSessionsModel {
             busy = false
             select(machine.id)
         } catch { self.error = error.localizedDescription }
+    }
+
+    func restoreSharing() async {
+        guard let sharingHost, await sharingHost.shouldRestoreSharing() else { return }
+        do {
+            try await sharingHost.start(address: tailscaleAddress())
+            sharing = true
+        } catch { self.error = error.localizedDescription }
+    }
+
+    func share() async {
+        guard let sharingHost, !busy else { return }
+        busy = true; error = nil
+        defer { busy = false }
+        do {
+            try await sharingHost.start(address: tailscaleAddress())
+            sharing = true
+            pairingCode = try await sharingHost.createCode()
+        } catch { self.error = error.localizedDescription }
+    }
+
+    func stopSharing() async {
+        guard let sharingHost, !busy else { return }
+        busy = true
+        defer { busy = false }
+        do { try await sharingHost.stop(); sharing = false; pairingCode = "" }
+        catch { self.error = error.localizedDescription }
+    }
+
+    func revokeDevices() async {
+        guard let sharingHost, !busy else { return }
+        busy = true
+        defer { busy = false }
+        do { try await sharingHost.revokeAll(); pairingCode = "" }
+        catch { self.error = error.localizedDescription }
     }
 
     func removeMachine() async {

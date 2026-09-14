@@ -5,15 +5,20 @@ import CmuxFoundation
 public actor MachineSessionService {
     private let runner: any CommandRunning
     private let directory: String
-    private let commands = MachineSessionCommands()
+    private let commands: MachineSessionCommands
+    private let network = MachineNetworkClient()
+    private let bundledBin: String?
 
     /// Creates an execution service with an injectable command runner.
     /// - Parameters:
     ///   - runner: Process execution implementation.
     ///   - directory: Local working directory for SSH and local probes.
-    public init(runner: any CommandRunning, directory: String) {
+    ///   - bundledBin: App-owned tmux directory; absent for standalone tests.
+    public init(runner: any CommandRunning, directory: String, bundledBin: String? = nil) {
         self.runner = runner
         self.directory = directory
+        self.bundledBin = bundledBin
+        commands = MachineSessionCommands(bundledBin: bundledBin)
     }
 
     /// Checks tmux compatibility and discovers installed agent executables.
@@ -21,6 +26,7 @@ public actor MachineSessionService {
     /// - Returns: Installed providers; credentials remain on the host and are checked by the agent.
     /// - Throws: A connection or prerequisite error.
     public func probe(_ machine: MachineProfile) async throws -> [MachineAgent] {
+        if let endpoint = machine.endpoint { return try await network.request(.init(operation: .probe), endpoint: endpoint).agents ?? [] }
         let output = try await run(commands.probe, on: machine)
         let lines = output.split(separator: "\n").map(String.init)
         guard let version = lines.first(where: { $0.hasPrefix("tmux ") }) else { throw MachineSessionError.tmuxMissing }
@@ -35,7 +41,8 @@ public actor MachineSessionService {
     /// - Returns: Live sessions created by this feature.
     /// - Throws: A connection error.
     public func sessions(_ machine: MachineProfile) async throws -> [MachineSession] {
-        commands.parseSessions(try await run(commands.list, on: machine))
+        if let endpoint = machine.endpoint { return try await network.request(.init(operation: .list), endpoint: endpoint).sessions ?? [] }
+        return commands.parseSessions(try await run(commands.list, on: machine))
     }
 
     /// Creates one detached agent session with a caller-owned idempotency identifier.
@@ -44,6 +51,7 @@ public actor MachineSessionService {
     ///   - machine: Execution host.
     /// - Throws: A prerequisite or execution error. Existing IDs are never overwritten.
     public func create(_ session: MachineSession, on machine: MachineProfile) async throws {
+        if let endpoint = machine.endpoint { _ = try await network.request(.init(operation: .create, session: session), endpoint: endpoint); return }
         _ = try await run(commands.create(session), on: machine)
     }
 
@@ -53,12 +61,14 @@ public actor MachineSessionService {
     ///   - machine: Owning host.
     /// - Throws: A connection error.
     public func end(_ session: MachineSession, on machine: MachineProfile) async throws {
+        if let endpoint = machine.endpoint { _ = try await network.request(.init(operation: .end, session: session), endpoint: endpoint); return }
         _ = try await run(commands.end(session.id), on: machine)
     }
 
     private func run(_ script: String, on machine: MachineProfile) async throws -> String {
         try commands.validate(machine)
-        let login = "exec \"${SHELL:-/bin/sh}\" -lc " + commands.quote(script)
+        let prefix = bundledBin.map { "export PATH=" + commands.quote($0) + ":\"$PATH\"\n" } ?? ""
+        let login = "exec \"${SHELL:-/bin/sh}\" -lc " + commands.quote(prefix + script)
         let executable = machine.isLocal ? "/bin/sh" : "/usr/bin/ssh"
         let arguments = machine.isLocal ? ["-c", login] : [
             "-o", "BatchMode=yes", "-o", "ConnectTimeout=8",
@@ -76,5 +86,14 @@ public actor MachineSessionService {
             }
         }
         return result.stdout ?? ""
+    }
+
+    /// Builds the local viewer command using the bundled tmux when available.
+    /// - Parameter session: Exact managed session.
+    /// - Returns: Quoted command that attaches without starting another agent.
+    /// - Throws: Invalid session identity.
+    public func localAttachCommand(_ session: MachineSession) throws -> String {
+        let prefix = bundledBin.map { "export PATH=" + commands.quote($0) + ":\"$PATH\"; " } ?? ""
+        return prefix + (try commands.attach(machine: MachineProfile(name: "", destination: ""), session: session))
     }
 }

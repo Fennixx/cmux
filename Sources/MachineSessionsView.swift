@@ -5,6 +5,7 @@ import CmuxMachineSessions
 struct MachineSessionsView: View {
     @Bindable var model: MachineSessionsModel
     @State private var sessionToEnd: MachineSession?
+    @State private var confirmRevoke = false
 
     var body: some View {
         // Register collection-row dependencies in this observing body, before
@@ -41,12 +42,26 @@ struct MachineSessionsView: View {
                 }
                 Divider()
                 Text(String(localized: "machines.add", defaultValue: "Add computer")).font(.headline)
-                TextField(String(localized: "machines.name", defaultValue: "Name"), text: $model.newMachineName)
-                TextField(String(localized: "machines.destination", defaultValue: "user@machine.tailnet.ts.net or SSH alias"), text: $model.newMachineDestination)
-                Button(String(localized: "machines.save", defaultValue: "Save computer")) { Task { await model.addMachine() } }
+                SecureField(String(localized: "machines.pairingCode", defaultValue: "Pairing code from the other Mac"), text: $model.newMachineDestination)
+                Button(String(localized: "machines.pair", defaultValue: "Pair computer")) { Task { await model.addMachine() } }
                     .disabled(model.busy || !model.catalogLoaded || model.newMachineDestination.isEmpty)
-                Text(String(localized: "machines.sshHelp", defaultValue: "Use a Tailscale address or an SSH alias pointing to it. Set up SSH key access once in Terminal; existing SSH configuration is respected."))
+                Text(String(localized: "machines.pairHelp", defaultValue: "On the other Mac, open cmux and choose Share over Tailscale. Paste its code here. No SSH or account required."))
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Divider()
+                Button(String(localized: "machines.share", defaultValue: "Share over Tailscale")) { Task { await model.share() } }.disabled(busy)
+                if model.sharing {
+                    Label(String(localized: "machines.sharing", defaultValue: "This Mac is shared"), systemImage: "checkmark.shield.fill").font(.caption).foregroundStyle(.green)
+                    if !model.pairingCode.isEmpty {
+                        Button(String(localized: "machines.copyCode", defaultValue: "Copy pairing code")) {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(model.pairingCode, forType: .string)
+                        }
+                        Text(String(localized: "machines.codeExpiry", defaultValue: "Single use · expires in 10 minutes. Sharing grants control as your Mac user. Share codes only with your own devices."))
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    Button(String(localized: "machines.stopSharing", defaultValue: "Stop sharing")) { Task { await model.stopSharing() } }.disabled(busy)
+                    Button(String(localized: "machines.revoke", defaultValue: "Revoke all paired devices"), role: .destructive) { confirmRevoke = true }.disabled(busy)
+                }
             }
             .textFieldStyle(.roundedBorder)
             .padding(20).frame(width: 275)
@@ -135,6 +150,9 @@ struct MachineSessionsView: View {
         .frame(minWidth: 850, minHeight: 600)
         .task { await model.load() }
         .task(id: model.selectedID) { await model.refresh() }
+        .confirmationDialog(String(localized: "machines.revokeConfirm", defaultValue: "Disconnect all paired devices and revoke their access? Agents will keep running."), isPresented: $confirmRevoke, titleVisibility: .visible) {
+            Button(String(localized: "machines.revoke", defaultValue: "Revoke all paired devices"), role: .destructive) { Task { await model.revokeDevices() } }
+        }
         .confirmationDialog(String(localized: "machines.endConfirm", defaultValue: "End this session and stop its running processes?"), isPresented: Binding(
             get: { sessionToEnd != nil }, set: { if !$0 { sessionToEnd = nil } }
         ), titleVisibility: .visible) {

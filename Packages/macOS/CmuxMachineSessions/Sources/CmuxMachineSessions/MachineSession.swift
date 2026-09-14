@@ -1,5 +1,5 @@
 /// A live session owned by the selected host's tmux server.
-public struct MachineSession: Sendable, Identifiable, Equatable {
+public struct MachineSession: Codable, Sendable, Identifiable, Equatable {
     /// Opaque tmux session name, independent of its display title.
     public let id: String
     /// User-assigned display title.

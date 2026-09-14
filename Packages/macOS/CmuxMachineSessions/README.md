@@ -1,28 +1,79 @@
-# Machine sessions
+# Machine sessions — private Tailscale pairing
 
-Host-owned Claude Code and Codex sessions over existing SSH connections (use Tailscale hostnames or aliases pointing to the tailnet). No cloud account, paid cmux service, provider credential upload, or public listener is required.
+The cmux app is both the client and the optional execution host. No SSH setup,
+cloud account, T3 component, paid cmux service, or separately launched app is
+required. The host must keep cmux running and remain awake on Tailscale.
 
-`MachineSessionService` uses an injected `CommandRunning`; tests can instantiate it with a scripted runner and an explicit local working directory. `MachineProfileRepository` takes a file URL, so tests use a temporary catalog without reading the user's settings.
+## Try it
 
-The execution host needs tmux 3.2+, a project directory, and the selected agent on its login-shell PATH. SSH authentication and host-key verification use OpenSSH defaults and the user's existing configuration. Set up key access once with `ssh user@host` before connecting from the app. Unknown host keys and failed authentication are surfaced; they never fall back to local execution.
+1. Run the same fork on both Macs, with both connected to your Tailscale network.
+2. On the execution Mac, open **File → Agent Session on Computer…** (also in the
+   workspace **+** menu), and choose **Share over Tailscale**.
+3. Choose **Copy pairing code**. On the viewer Mac, paste it into **Add computer**
+   and choose **Pair computer**. The invitation is single-use and expires after
+   ten minutes; press **Share over Tailscale** again to generate another.
+4. Select the paired Mac, an existing absolute project directory on that Mac,
+   and Claude Code or Codex, then **Start session**. Agent installation, login,
+   permission and project-trust prompts remain on the execution Mac. Nothing
+   approves those prompts automatically.
+5. Closing the viewer detaches it. Reopen the picker and choose **Open** to
+   reconnect to the same live session, including from another paired Mac.
+6. **End** plus confirmation terminates the exact agent session. **Stop sharing**
+   disconnects viewers without ending agents. **Revoke all paired devices**
+   invalidates their credentials and closes their connections immediately.
 
-Session metadata lives in tmux's per-session environment (`CMUX_MACHINE_TITLE`, `CMUX_MACHINE_PROJECT`, `CMUX_MACHINE_AGENT`). A fresh client discovers sessions directly from the host. The `cmux-agent-<uuid>` name remains opaque and stable. Detaching a viewer does not terminate the agent; End explicitly kills its exact managed tmux session. Rebooting the host or exiting the agent ends its live session; this version does not claim reboot recovery or conversation-history synchronization.
+The native terminal bridge and tmux are bundled by `scripts/build-machine-helper.sh`;
+only the build machine needs Homebrew tmux. Transitive native libraries and their
+license notices travel with the bundle. The current local packaging path targets
+the build machine's architecture.
 
-Run focused tests with `swift test --package-path Packages/macOS/CmuxMachineSessions`.
-To include the real SSH lifecycle test, point `CMUX_MACHINE_TEST_HOST` at an explicitly prepared, disposable SSH fixture (for example the loopback-only server from `scripts/remote-tmux-fuzz-host.sh`). The test owns a unique sleep-only session and removes only that session.
+The app restores an enabled host on launch using its saved port. If Tailscale is
+not ready, open the picker and choose **Share over Tailscale** after connecting it.
+There is no public-listener, DNS, SSH, or local-execution fallback on failure.
 
-## Trying the macOS UI
+## Trust boundary
 
-1. Build and launch an isolated copy: `./scripts/reload.sh --tag fenix-machines --no-global-cli-links --launch`.
-2. Open **File → Agent Session on Computer…** (also available in the workspace **+** menu).
-3. Select this computer, or save a name and `user@machine.tailnet.ts.net` / configured SSH alias. The machine catalog is local to this build; add the same host on each viewer Mac.
-4. Select Claude Code or Codex, enter an existing absolute project path **on that host**, and choose **Start session**. Agent authentication and any trust/onboarding prompts appear in its terminal; no prompt is automatically approved.
-5. Close the resulting workspace. Reopen the picker and choose **Open** on the same session. From another Mac running this fork, add the same SSH host and account to discover it.
-6. Use **End**, then confirm, only when you want to stop the agent and its processes.
+- The listener binds exclusively to the local numeric Tailscale IPv4 address
+  (100.64.0.0/10). The client rejects DNS names, loopback and public endpoints.
+  Only isolated test constructors permit loopback.
+- Transport encryption and machine routing are supplied by Tailscale/WireGuard.
+  Do not expose this protocol by port-forwarding or a public TCP proxy.
+- A random 256-bit pairing secret authorizes one exchange. Each client receives
+  a different 256-bit durable credential. Pairing grants cannot access sessions.
+- The host stores only SHA-256 credential digests. Client credentials are in the
+  build's private catalog, written atomically with mode 0600 from creation; the
+  parent directory is created with mode 0700. Secrets never enter helper arguments.
+  Do not log codes or include them in recordings.
+- Sharing authorizes agent/terminal control as the host's logged-in user. Projects
+  are not sandboxes. Pair only your own trusted devices.
+- The versioned protocol allows pairing, provider discovery, managed-session
+  list/create/end, and a bounded terminal stream. It does not forward arbitrary
+  commands into cmux's control socket or change the SSH relay allowlist.
+- Frames are bounded to 64 KiB; input chunks to 4 KiB; terminal dimensions to
+  2–1000 cells; concurrent connections to 32. Unauthenticated connections expire.
+  Slow terminal consumers are disconnected instead of silently losing output.
 
-For Mac hosts, enable macOS **Remote Login** for the intended account. Install tmux and the desired agents on that Mac, and verify `ssh user@host` works with key authentication before adding it. Tailscale provides the network route; it does not automatically enable macOS SSH or synchronize repositories. No automatic host discovery, file synchronization, agent history import, mobile UI, or restart recovery is included in this first version.
+Sessions use stable `cmux-agent-<uuid>` identities. tmux retains the process and
+metadata after viewer disconnects. Host reboot, agent exit, or explicit **End** ends
+the live session. This version does not provide history import, reboot recovery,
+file synchronization, iOS support, or T3 mobile compatibility.
+Legacy saved SSH profiles remain readable, but new profiles use pairing only.
 
-Remote terminals use cmux's existing native tmux mirror. Managed `cmux-agent-<uuid>` sessions opt out of workspace-close and app-quit kill paths, including after restoration; ordinary remote tmux sessions retain their existing behavior. Renaming a managed workspace changes its local presentation, not the stable remote ID. Local terminals use a regular tmux attachment.
-Closing a managed remote terminal tab also detaches the whole viewer workspace instead of killing a tmux window. This keeps the agent alive even if you use the terminal tab's close button; reopen the session to view it again.
+## Development and verification
 
-Verification includes shell-injection inputs, failed SSH without local fallback, prerequisite errors, catalog persistence/corruption, managed-only discovery, and a live tmux create → attach → detach → discover from a second service → idempotent retry → explicit termination test. A real two-Mac test additionally requires the remote machine's SSH access; local tests do not establish Tailscale reachability.
+`MachineSessionService` accepts an injected `CommandRunning` and binary directory.
+Repositories take explicit file URLs. Tests use private temporary directories
+and own only UUID-named disposable tmux sessions.
+
+```sh
+swift test --package-path Packages/macOS/CmuxMachineSessions
+./scripts/reload.sh --tag fenix-machines --no-global-cli-links --launch
+```
+
+Tests exercise literal shell input, prerequisite errors, private-file modes,
+corruption preservation, one-use pairing, revocation and restart persistence,
+endpoint rejection, real TCP authentication, PTY input and resize, and paired TCP
+terminal attach → detach → second attach → explicit end.
+The legacy SSH test is opt-in via `CMUX_MACHINE_TEST_HOST`; it is not needed for
+pairing. Local tests do not establish reachability of a second physical Mac.
+Two-Mac dogfood requires installing this fork on that Mac.
