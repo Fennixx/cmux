@@ -119,6 +119,29 @@ struct RemoteTmuxMirrorTargetingTests {
         #expect(mirrorTitles == ["new", "old"])
     }
 
+    @Test func restoredManagedMirrorKeepsStableIdentityAndDetachesOnClose() throws {
+        let controller = RemoteTmuxController()
+        let manager = TabManager()
+        let host = RemoteTmuxHost(destination: "user@host")
+        let name = "cmux-agent-" + UUID().uuidString.lowercased()
+        // Cached, unstarted connections keep this test off the network. Keep a
+        // sibling mirror so closing the managed one does not reap an SSH master.
+        for sessionName in [name, "ordinary"] {
+            cacheConnection(controller: controller, host: host, sessionName: sessionName)
+            try controller.mirrorSession(host: host, sessionName: sessionName, into: manager)
+        }
+        let mirror = try #require(controller.sessionMirror(host: host, sessionName: name))
+        let workspaceID = try #require(mirror.mirroredWorkspaceId)
+        #expect(mirror.preserveSessionOnClose)
+        #expect(controller.sessionMirror(host: host, sessionName: "ordinary")?.preserveSessionOnClose == false)
+        controller.handleMirrorWorkspaceRenamed(workspaceId: workspaceID, title: "Readable title")
+        #expect(mirror.sessionName == name)
+        #expect(mirror.agentSessionDisplayTitle == "Readable title")
+        controller.handleWorkspaceClosed(workspaceId: workspaceID)
+        #expect(controller.sessionMirror(host: host, sessionName: name) == nil)
+        #expect(controller.sessionMirror(host: host, sessionName: "ordinary") != nil)
+    }
+
     @Test func workspaceCloseKillTargetSkipsEndedConnections() {
         #expect(RemoteTmuxController.workspaceCloseKillTarget(
             connectionExited: true,

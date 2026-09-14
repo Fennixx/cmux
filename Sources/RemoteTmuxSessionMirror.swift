@@ -12,6 +12,10 @@ import CmuxRemoteSession
 @MainActor
 final class RemoteTmuxSessionMirror: RemoteTmuxControlPaneMutationOwner {
     let host: RemoteTmuxHost
+    /// Agent sessions outlive their viewers; termination is explicit in the machine picker.
+    var preserveSessionOnClose = false
+    /// Optional presentation title; never replaces a managed session's stable tmux name.
+    var agentSessionDisplayTitle: String?
     private(set) var sessionName: String
     /// Discovery's stable tmux session id (`$N`), seeded at creation so id-based
     /// de-dup works before the control stream reports `connection.sessionId`.
@@ -86,7 +90,7 @@ final class RemoteTmuxSessionMirror: RemoteTmuxControlPaneMutationOwner {
     /// title, mirroring how a remote window rename unconditionally re-titles its
     /// tab, so this overwrites any local custom title.
     func applySessionNameToWorkspaceTitle(_ name: String) {
-        guard let safe = RemoteTmuxHost.controlModeLineSafeName(name) else { return }
+        guard let safe = RemoteTmuxHost.controlModeLineSafeName(agentSessionDisplayTitle ?? name) else { return }
         guard let workspace else { return }
         let currentManager = workspace.owningTabManager
             ?? AppDelegate.shared?.tabManagerFor(tabId: workspace.id)
@@ -181,6 +185,10 @@ final class RemoteTmuxSessionMirror: RemoteTmuxControlPaneMutationOwner {
     ) {
         self.host = host
         self.sessionName = sessionName
+        // Preserve managed sessions even after app restart or attachment through
+        // the standard remote picker, not only through the machine-session window.
+        self.preserveSessionOnClose = sessionName.hasPrefix("cmux-agent-")
+            && UUID(uuidString: String(sessionName.dropFirst(11))) != nil
         self.seededSessionId = seededSessionId
         self.connection = connection
         self.pendingPaneSeedByteLimit = max(0, pendingPaneSeedByteLimit)

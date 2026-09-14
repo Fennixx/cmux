@@ -9,6 +9,13 @@ extension AppDelegate {
         cmuxConfigStore: CmuxConfigStore
     ) -> NSMenu? {
         let menu = NSMenu()
+        let machineSessionsItem = NSMenuItem(
+            title: String(localized: "machines.menu", defaultValue: "Agent Session on Computer…"),
+            action: #selector(showMachineSessions(_:)), keyEquivalent: ""
+        )
+        machineSessionsItem.target = self
+        menu.addItem(machineSessionsItem)
+        menu.addItem(.separator())
         var renderedSectionCount = 0
 
         func defaultBadge() -> NSMenuItemBadge {

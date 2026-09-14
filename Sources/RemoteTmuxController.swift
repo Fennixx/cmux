@@ -363,6 +363,10 @@ final class RemoteTmuxController {
         else { return }
         let mirror = entry.value
         let oldName = mirror.sessionName
+        if mirror.preserveSessionOnClose {
+            mirror.agentSessionDisplayTitle = name
+            return
+        }
         guard name != oldName, mirror.connection.connectionState == .connected else { return }
         // Target by the stable session id when known, so the rename can't race a
         // prior rename's name.
@@ -514,8 +518,18 @@ final class RemoteTmuxController {
     ///   `false` if there is no live mirror/connection or the panel isn't a
     ///   mirrored window (caller proceeds with the normal local close).
     func handleMirrorTabCloseRequested(workspaceId: UUID, panelId: UUID) -> Bool {
-        guard let target = mirrorWindowTarget(workspaceId: workspaceId, panelId: panelId),
-              target.mirror.connection.connectionState == .connected else { return false }
+        guard let target = mirrorWindowTarget(workspaceId: workspaceId, panelId: panelId) else { return false }
+        if target.mirror.preserveSessionOnClose {
+            guard let manager = AppDelegate.shared?.tabManagerFor(tabId: workspaceId),
+                  let workspace = manager.tabs.first(where: { $0.id == workspaceId }) else { return false }
+            // A managed tab is a viewer, not ownership of the host process.
+            // Defer teardown until Bonsplit's close delegate has returned.
+            Task { @MainActor in
+                _ = manager.closeWorkspaceNonInteractively(workspace)
+            }
+            return true
+        }
+        guard target.mirror.connection.connectionState == .connected else { return false }
         return target.mirror.connection.send("kill-window -t @\(target.windowId)")
     }
 
@@ -702,7 +716,9 @@ final class RemoteTmuxController {
                 sessionMirrors.removeValue(forKey: key)
                 mirror.detachObserver()
                 detach(host: host, sessionName: mirror.sessionName)  // removes the connection too
-                jobs.append((transport(for: host), mirror.connection.sessionId.map { "$\($0)" } ?? mirror.sessionName))
+                if !mirror.preserveSessionOnClose {
+                    jobs.append((transport(for: host), mirror.connection.sessionId.map { "$\($0)" } ?? mirror.sessionName))
+                }
                 if !sessionMirrors.values.contains(where: { $0.host.connectionHash == host.connectionHash }),
                    !connectionsByHostSession.values.contains(where: { $0.host.connectionHash == host.connectionHash }) {
                     transportRegistry.remove(connectionHash: host.connectionHash)
@@ -722,10 +738,14 @@ final class RemoteTmuxController {
         if !hostHasOtherMirrors, !connectionsByHostSession.values.contains(where: { $0.host.connectionHash == host.connectionHash }) { transportRegistry.remove(connectionHash: host.connectionHash); RemoteTmuxSSHTransport.spawnControlMasterExit(host: host) }
     }
 
-    /// User-initiated mirrored workspace close detaches locally and kills the remote session.
+    /// Workspace close detaches managed agent sessions; ordinary mirrors retain kill-on-close.
     func handleWorkspaceClosed(workspaceId: UUID) {
         guard let entry = sessionMirrors.first(where: { $0.value.mirroredWorkspaceId == workspaceId })
         else { return }
+        if entry.value.preserveSessionOnClose {
+            detachMirrorWorkspaceKeptOpenLocally(workspaceId: workspaceId)
+            return
+        }
         let mirror = entry.value
         let host = mirror.host
         let sessionName = mirror.sessionName
