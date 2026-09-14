@@ -1,5 +1,12 @@
 # Changelog
 
+## Fennixx 0.65.0
+
+- Updated the fork to official cmux 0.64.23, replacing the old fork-only customizations.
+- Added app-owned Tailscale pairing between Macs and host selection for persistent Claude Code or Codex sessions.
+- Started a new signed Fennixx update channel. This version requires a one-time manual installation because the previous signing key is unavailable; subsequent updates use Check for Updates.
+- Apple Silicon personal build; not Apple-notarized. Physical two-Mac pairing still needs verification.
+
 All notable changes to cmux are documented here.
 
 ## [0.64.23] - 2026-09-14

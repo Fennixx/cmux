@@ -16,6 +16,7 @@ env:
 
 jobs:
   generate-ios-screenshots:
+    if: github.repository == 'manaflow-ai/cmux'
     name: Generate iOS App Store screenshots
     # Runs alongside the macOS build so every stable tag still ships screenshot
     # artifacts captured at the exact release ref. It is deliberately not a
@@ -39,6 +40,7 @@ jobs:
       upload: false
 
   build-ghostty-cli-helper:
+    if: github.repository == 'manaflow-ai/cmux'
     runs-on: ${{ vars.MACOS_RUNNER_15 || 'blacksmith-6vcpu-macos-15' }}
     timeout-minutes: 20
     steps:
@@ -86,6 +88,7 @@ jobs:
           retention-days: 3
 
   build-sign-notarize:
+    if: github.repository == 'manaflow-ai/cmux'
     needs: build-ghostty-cli-helper
     # Build the app on macOS 26 so SDK-gated SwiftUI Liquid Glass code compiles
     # into stable releases. The real universal Ghostty CLI helper is built on
